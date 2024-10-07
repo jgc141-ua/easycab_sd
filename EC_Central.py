@@ -19,7 +19,7 @@ def handle_client(conn, addr):
             if msg == FIN:
                 connected = False
             print(f" He recibido del cliente [{addr}] el mensaje: {msg}")
-            conn.send(f"HOLA CLIENTE: He recibido tu mensaje: {msg} ".encode(FORMAT))
+            conn.send("OK")
     print("ADIOS. TE ESPERO EN OTRA OCASION")
     conn.close()
     

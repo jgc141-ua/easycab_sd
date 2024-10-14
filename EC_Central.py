@@ -153,7 +153,7 @@ def requestCustomers(ipQueues, portQueues):
         threadAssignCustomers.start()
 
 def main(port, ipQueues, portQueues):
-    server = socket.gethostbyname("172.27.202.8")#socket.gethostname())
+    server = socket.gethostbyname(socket.gethostname())
     addr = (server, int(port))
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

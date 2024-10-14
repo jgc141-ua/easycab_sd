@@ -167,11 +167,11 @@ def main(port, ipQueues, portQueues):
     threadSockets = threading.Thread(target=connectionSocket, args=(server, taxis))
     threadSockets.start()
 
-    #threadResquests = threading.Thread(target=requestCustomers, args=(ipQueues, portQueues))
-    #threadResquests.start()
+    threadResquests = threading.Thread(target=requestCustomers, args=(ipQueues, portQueues))
+    threadResquests.start()
 
-    #threadShowMap = threading.Thread(target=showMap)
-    #threadShowMap.start()
+    threadShowMap = threading.Thread(target=showMap)
+    threadShowMap.start()
 
     return 0
 

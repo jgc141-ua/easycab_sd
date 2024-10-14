@@ -4,7 +4,7 @@
 # Librerías
 import socket # Para establecer la conexión de red entre las aplicaciones del sistema
 import sys # Para acceder a los argumentos de la línea de comandos
-from kafka import kafkaProducer, KafkaConsumer   # type: ignore
+#from kafka import kafkaProducer, KafkaConsumer   # type: ignore
 import json
 import time
 
@@ -26,7 +26,7 @@ def conexion_central(ip_central, port_central, id_taxi):
             socket_creado.connect((ip_central, int(port_central)))
 
             # Autenticación con la central enviando el ID del taxi
-            mensaje_de_autenticacion = f'AUTENTICAR TAXI = #{id_taxi}'
+            mensaje_de_autenticacion = f'AUTENTICAR TAXI #{id_taxi}'
 
             # Envío del mensaje de autenticación
             socket_creado.sendall(mensaje_de_autenticacion.encode(FORMAT))
@@ -35,14 +35,12 @@ def conexion_central(ip_central, port_central, id_taxi):
             respuesta = socket_creado.recv(HEADER).decode(FORMAT)
 
             # Mostramos la respuesta de la central
-            print(f"Respuesta de la central: {respuesta}")
+            print(f"{respuesta}")
 
             # Comprobamos si la autenticación fue válida o errónea
-            if respuesta == "OK":
-                print(f"Taxi {id_taxi} autenticado correctamente")
+            if respuesta[len(respuesta)-1] == "1":
                 return socket_creado # Devolvemos el socket para usarlo después
             else:
-                print(f"Fallo de autenticación del taxi {id_taxi}")
                 return None
         
     except ConnectionError:
@@ -97,7 +95,7 @@ def conexion_taxi(ip_central, port_central, ip_broker, port_broker, ip_sensores,
     # Conexión con la central
     socket_creado = conexion_central(ip_central, port_central, id_taxi)
 
-    if socket_creado:
+    if False:#socket_creado:
         # Inicializamos el productor y el consumidor de kafka
         broker = f'{ip_broker}:{port_broker}'
         productor = kafkaProducer(bootstrap_servers = [broker], value_serializer = lambda v: json.dumps(v).encode(FORMAT))
@@ -122,15 +120,15 @@ if __name__ == "__main__":
     if len(sys.argv) == 8:
         ip_central = sys.argv[1]
         port_central = sys.argv[2]
-        ip_broker = sys.argv[3]
-        port_broker = sys.argv[4]
-        ip_sensores = sys.argv[5]
-        port_sensores = sys.argv[6]
+        ip_broker = 0#sys.argv[3]
+        port_broker = 0#sys.argv[4]
+        ip_sensores = 0#sys.argv[5]
+        port_sensores = 0#sys.argv[6]
         id_taxi = sys.argv[7]
 
         # Conexión del taxi con la central y kafka
         conexion_taxi(ip_central, port_central, ip_broker, port_broker, ip_sensores, port_sensores, id_taxi)
 
     else:
-        print(f"ERROR: número de argumentos incorrecto")
+        print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP GESTOR DE COLAS> <PUERTO GESTOR DE COLAS> <IP EC_S> <PUERTO EC_S> <ID TAXI>")
 

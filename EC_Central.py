@@ -135,25 +135,19 @@ def connectionSocket(server, taxis):
         threadTaxi = threading.Thread(target=receiveClient, args=(conn, taxis))
         threadTaxi.start()
 
-xdd = []
-
-def assignCustomer(ipQueues, portQueues, idCustomer):
-    producer = kafka.KafkaProducer(bootstrap_servers=f"{ipQueues}:{portQueues}")
-    if idCustomer not in xdd:
-        producer.send("Clientes", f"SERVICIO ACEPTADO AL CLIENTE {idCustomer} /5".encode(FORMAT))
-        xdd.append(idCustomer)
-    else:
-        producer.send("Clientes", "Debe esperar más tiempo".encode(FORMAT))
-
-def requestCustomers(ipQueues, portQueues):
+def idCustomer():
     consumer = kafka.KafkaConsumer("Clientes")
     for msg in consumer:
-        idCustomer = msg.value.decode(FORMAT)
-        threadAssignCustomers = threading.Thread(target=assignCustomer, args=(ipQueues, portQueues, idCustomer))
-        threadAssignCustomers.start()
+        print(msg.value.decode(FORMAT))
+
+def requestCustomers(ipQueues, portQueues):
+    threadIDCustomer = threading.Thread(target=idCustomer)
+    threadIDCustomer.start()
+    
 
 def main(port, ipQueues, portQueues):
-    server = socket.gethostbyname(socket.gethostname())
+    server = socket.gethostbyname_ex(socket.gethostname())[2][1]
+    print(server)
     addr = (server, int(port))
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -170,8 +164,8 @@ def main(port, ipQueues, portQueues):
     threadResquests = threading.Thread(target=requestCustomers, args=(ipQueues, portQueues))
     threadResquests.start()
 
-    threadShowMap = threading.Thread(target=showMap)
-    threadShowMap.start()
+    #threadShowMap = threading.Thread(target=showMap)
+    #threadShowMap.start()
 
     return 0
 

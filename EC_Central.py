@@ -11,6 +11,7 @@ END_CONNECTION1 = "FIN"
 END_CONNECTION2 = "ERROR"
 MAX_CONEXIONES = 100
 
+# Mostrar el mapa
 def showMap():
     print(" ------------------------------------------------------------ ")
     print("|                          EASY CAB                          |")
@@ -37,6 +38,10 @@ def showMap():
                 print("  1      d      OK. Taxi 5    |")
     
     print(" -----------------------------|------------------------------ ")
+
+
+
+
 
 def searchTaxiID(idTaxi, taxis):
     modifiedLine = []
@@ -80,6 +85,10 @@ def setTaxiDestination(destination, idCustomer):
         file.seek(0)
         file.writelines(modifiedLine)
         file.truncate()
+
+
+
+
 
 def verifyTaxi(conn, idTaxi, taxis):
     isVerified = searchTaxiID(idTaxi, taxis)
@@ -135,15 +144,22 @@ def connectionSocket(server, taxis):
         threadTaxi = threading.Thread(target=receiveClient, args=(conn, taxis))
         threadTaxi.start()
 
-def idCustomer():
-    consumer = kafka.KafkaConsumer("Clientes")
+
+
+
+def idCustomer(ipQueues, portQueues):
+    consumer = kafka.KafkaConsumer("Clientes", bootstrap_server=[f"{ipQueues}:{portQueues}"])
     for msg in consumer:
         print(msg.value.decode(FORMAT))
 
 def requestCustomers(ipQueues, portQueues):
-    threadIDCustomer = threading.Thread(target=idCustomer)
+    threadIDCustomer = threading.Thread(target=idCustomer, args=(ipQueues, portQueues))
     threadIDCustomer.start()
     
+
+
+
+
 
 def main(port, ipQueues, portQueues):
     server = socket.gethostbyname_ex(socket.gethostname())[2][1]

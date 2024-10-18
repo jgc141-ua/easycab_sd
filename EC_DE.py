@@ -7,6 +7,11 @@ import sys # Para acceder a los argumentos de la línea de comandos
 #from kafka import kafkaProducer, KafkaConsumer   # type: ignore
 import json
 import time
+import threading
+
+# Para el algoritmo A* --> librerías
+import heapq
+import math
 
 HEADER = 64
 FORMAT = 'utf-8'
@@ -14,6 +19,94 @@ FIN = 'FIN'
 
 # Inicialización de la posición del taxi (indefinida)
 posicion_actual = None
+
+# Para el algoritmo A* --> dimensiones del mapa
+TAM_MAPA = 20
+
+# Para el algoritmo A* --> movimientos
+MOVIMIENTOS = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
+
+# Para el algoritmo A* --> heurística --> distancia euclidea
+def heuristica(pos_actual, pos_destino):
+    return math.sqrt((pos_actual[0] - pos_destino[0]) ** 2 + (pos_actual[1] - pos_destino[1]) **2)
+
+# Para el algoritmo A* --> movimiento esférico
+def movimiento_esferico(posicion, movimiento):
+    nueva_posX = (posicion[0] + movimiento[0]) % TAM_MAPA
+    nueva_posY = (posicion[1] + movimiento[1]) % TAM_MAPA
+    return (nueva_posX, nueva_posY)
+
+# Algoritmo A*
+def algoritmo_a_estrella(inicio, destino):
+    listaFrontera = []
+    heapq.heappush(listaFrontera, (0,inicio))
+
+    listaInterior = set()
+
+    coste = {inicio: 0}
+    rastreo = {inicio: None}
+
+    while listaFrontera:
+        _, posicion_actual = heapq.heappop(listaFrontera)
+
+        if posicion_actual == destino:
+            camino = []
+            
+            while posicion_actual is not None:
+                camino.append(posicion_actual)
+                posicion_actual = rastreo[posicion_actual]
+
+            return camino[::-1]
+        
+        listaInterior.add(posicion_actual)
+
+        for movimiento in MOVIMIENTOS:
+            vecino = movimiento_esferico(posicion_actual, movimiento)
+
+            if vecino in listaInterior:
+                continue
+
+            nuevo_coste = coste[posicion_actual] + 1
+
+            if vecino not in coste or nuevo_coste < coste[vecino]:
+                coste[vecino] = nuevo_coste
+
+                prioridad = nuevo_coste + heuristica(vecino, destino)
+
+                heapq.heappush(listaFrontera, (prioridad, vecino))
+
+                rastreo[vecino] = posicion_actual
+
+    return None
+
+# Función encargada de enviar la incidencia a la central
+def enviar_incidencia_a_central(ip_central, port_central, incidencia):
+    addr_central = (ip_central, int(port_central))
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_central:
+        socket_central.connect(addr_central)
+
+        socket_central.send(incidencia.encode(FORMAT))
+
+        print(f"[ENVÍO] Incidencia enviada a la central: {incidencia}")
+
+# Función encargada de recibir incidencias de EC_S y reenviarla a la central
+def recibe_incidencia(ip_central, port_central, ip_S, port_S):
+    addr_DE = (ip_S, port_S)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(addr_DE)
+        servidor.listen()
+        print(f"[ESCUCHA] Esperando incidencias en {ip_S}:{port_S}...")
+
+        while True:
+            conn, addr = servidor.accept()
+
+            with conn:
+                incidencia = conn.recv(HEADER).decode(FORMAT)
+                print("[RECIBIDO] Incidencia recibida: {incidencia}")
+
+                enviar_incidencia_a_central(ip_central, port_central, incidencia)
 
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
 def conexion_central(ip_central, port_central, id_taxi):
@@ -29,7 +122,7 @@ def conexion_central(ip_central, port_central, id_taxi):
             mensaje_de_autenticacion = f'AUTENTICAR TAXI #{id_taxi}'
 
             # Envío del mensaje de autenticación
-            socket_creado.sendall(mensaje_de_autenticacion.encode(FORMAT))
+            socket_creado.send(mensaje_de_autenticacion.encode(FORMAT))
 
             # Espera de la respuesta de la central
             respuesta = socket_creado.recv(HEADER).decode(FORMAT)
@@ -129,6 +222,8 @@ if __name__ == "__main__":
         # Conexión del taxi con la central y kafka
         conexion_taxi(ip_central, port_central, ip_broker, port_broker, ip_sensores, port_sensores, id_taxi)
 
+        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(ip_central, port_central, ip_sensores, port_sensores))
+        hilo_incidencias.start()
     else:
         print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP GESTOR DE COLAS> <PUERTO GESTOR DE COLAS> <IP EC_S> <PUERTO EC_S> <ID TAXI>")
 

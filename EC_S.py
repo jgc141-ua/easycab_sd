@@ -17,33 +17,65 @@ DESCONECTADO = False
 # Función encargada de enviar el estado a Digital Engine
 def enviar_estado(ip_DE, port_DE):
     global DESCONECTADO
-    addr = (ip_DE, port_DE)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
-        socket_creado(addr)
-        print(f"Conectado a {addr}")
+        socket_creado.connect(ip_DE, int(port_DE))
+        print(f"[CONCECTADO] Conectado a {ip_DE, int(port_DE)}")
 
         while not DESCONECTADO:
             estado = OK
-            socket_creado.send(estado.encode(FORMAT))
+            socket_creado.send(estado.encode(FORMAT)) # Envio de estado OK a Digital Engine
 
-            print(f"Estado: {estado}")
+            print(f"[ESTADO] Estado: {estado}")
             time.sleep(1)
+
+# Función encargada de enviar la incidencia que se ha detectado a Digital Engine
+def envio_incidencia(ip_DE, port_DE, incidencia):    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
+        socket_creado.connect(ip_DE, int(port_DE))
+
+        socket_creado.send(incidencia.encode(FORMAT))
+
+        print(f"[INCIDENCIA] Incidencia: {incidencia}")
 
 # Función encargada de detectar incidencias cuando se presiona una tecla
 def detectar_incidencia(ip_DE, port_DE):
     global DESCONECTADO
-    addr = (ip_DE, port_DE)
 
     while not DESCONECTADO:
-        if keyboard.read_event():
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
-                socket_creado.connect(addr)
-                socket_creado.send(KO.encode(FORMAT))
-                estado = KO
-                print(f"Estado: {estado}")
-                time.sleep(1)
-
+        # SEMÁFORO
+        if keyboard.is_pressed('s'):
+           envio_incidencia(ip_DE, port_DE, 'SEMÁFORO')
+           time.sleep(1)
+        # PERSONA
+        elif keyboard.is_pressed('p'):
+            envio_incidencia(ip_DE, port_DE, 'PERSONA')
+            time.sleep(1)
+        # COCHE
+        elif keyboard.is_pressed('c'):
+            envio_incidencia(ip_DE, port_DE, 'COCHE')
+            time.sleep(1)
+        # VALLA
+        elif keyboard.is_pressed('v'):
+            envio_incidencia(ip_DE, port_DE, 'VALLA')
+            time.sleep(1)
+        # MURO
+        elif keyboard.is_pressed('m'):
+            envio_incidencia(ip_DE, port_DE, 'MURO')     
+            time.sleep(1)      
+        # OBRA
+        elif keyboard.is_pressed('o'):
+            envio_incidencia(ip_DE, port_DE, 'OBRA')
+            time.sleep(1)
+        # STOP
+        elif keyboard.is_pressed('s'):
+            envio_incidencia(ip_DE, port_DE, 'STOP')
+            time.sleep(1)
+        # ACCIDENTE
+        elif keyboard.is_pressed('a'):
+            envio_incidencia(ip_DE, port_DE, 'ACCIDENTE')
+            time.sleep(1)
+           
 # Sensor
 def sensor(ip_DE, port_DE):
     hilo_1 = threading.Thread(target=enviar_estado, args=(ip_DE, port_DE))
@@ -65,3 +97,4 @@ if __name__ == "__main__":
 
     else:
         print("Número de argumentos incorrecto")
+

@@ -211,8 +211,6 @@ def receiveServices(id_taxi):
             print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
             return True
 
-
-
 def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
     # Conexión con la central
     conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
@@ -220,27 +218,6 @@ def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
     if conexion_verificada:
         threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
         threadServices.start()
-
-# Función principal de conexión del taxi
-def conexion_taxi(ip_central, port_central, KAFKA_IP, KAFKA_PORT, ip_sensores, port_sensores, id_taxi):
-    if False:#conexion_verificada:
-        # Inicializamos el productor y el consumidor de kafka
-        broker = f'{ip_broker}:{port_broker}'
-        productor = kafkaProducer(bootstrap_servers = [broker], value_serializer = lambda v: json.dumps(v).encode(FORMAT))
-
-        topic_actualizacion_central = "actualizacion_central"
-        topic_actualizacion_taxi = f"actualización_taxi_{id_taxi}"
-
-        consumidor = KafkaConsumer(topic_actualizacion_taxi, 
-                                   bootstrap_server = [broker],
-                                   auto_offset_reset = 'earliest',
-                                   value_deserializer = lambda x: json.loads(x.decode(FORMAT)))
-        
-        # Mientras la conexión se encuentre activa, enviamos eventos y recibimos instrucciones
-        while True:
-            enviar_eventos_kafka(productor, id_taxi, topic_actualizacion_central)
-            recibir_mensajes_kafka(consumidor, id_taxi)
-            time.sleep(1)
 
 # Main
 if __name__ == "__main__":
@@ -261,4 +238,3 @@ if __name__ == "__main__":
         hilo_incidencias.start()
     else:
         print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP BOOTSTRAP-SERVER> <PUERTO BOOTSTRAP-SERVER> <IP EC_S> <PUERTO EC_S> <ID TAXI>")
-

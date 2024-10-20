@@ -5,6 +5,9 @@ import kafka
 import signal
 import time
 
+# PARA MOSTRAR MAPA
+import curses
+
 import kafka.errors
 
 HEADER = 64
@@ -13,9 +16,12 @@ END_CONNECTION1 = "FIN"
 END_CONNECTION2 = "ERROR"
 KAFKA_IP = 0
 KAFKA_PORT = 0
+
+# PARA MOSTRAR MAPA
 mapa = [["." for _ in range(20)] for _ in range(20)]
 taxis = []
 customers = []
+localizaciones = []
 
 def centralDown(sig, frame):
     sendMessageKafka("Central2Taxi", "DEATH CENTRAL")
@@ -25,7 +31,7 @@ def centralDown(sig, frame):
 signal.signal(signal.SIGINT, centralDown)
 signal.signal(signal.SIGTERM, centralDown)
 
-# Mostrar el mapa
+# PARA MOSTRAR MAPA
 def getTaxis():
     activeTaxis = []
     with open("database.txt", "r") as file:
@@ -42,91 +48,8 @@ def getTaxis():
 
     return activeTaxis
 
-def mapLogic(activeTaxis):
-    str2Print = ""
-
-    for i in range(max(len(activeTaxis), len(customers))):
-        if i < len(activeTaxis):
-            taxi = activeTaxis[i]
-
-            str2Print += f"|  {taxi[0]}      {taxi[1]}     {taxi[2]}. "
-            if i < len(customers):
-                if taxi[3] == "Parado":
-                    str2Print += f"{taxi[3]}    |"
-                else:
-                    str2Print += f"{taxi[3]} |"
-
-                for j in range(len(activeTaxis)):
-                    taxi = activeTaxis[j]
-                    customer = customers[i]
-
-                    str2Print += f"  {customer[0]}      {customer[1]}      " # Inicio del cliente
-                    if taxi[1] == customer[0]: # Destino Taxi == ID Customer
-                        if taxi[2] == "OK":
-                            str2Print += f"{customer[2]} Taxi {taxi[0]}    |\n"
-                        elif taxi[2] == "KO":
-                            str2Print += f"{customer[2]} Sin Taxi  |\n"
-
-                    else:
-                        str2Print += f"    {customer[2]}       |\n"
-
-            elif i == len(customers):
-                str2Print += " ------------------------\n"
-
-            else:
-                if taxi[3] == "Parado":
-                    str2Print += f"{taxi[3]}    |\n"
-                else:
-                    str2Print += f"{taxi[3]} |\n"
-
-        elif i < len(customers):
-            customer = customers[i]
-            str2Print += f"                              |  {customer[0]}      {customer[1]}          {customer[2]}       |\n"
-            str2Print += " ------------------------------\n"
-
-    return str2Print
-
+# PARA MOSTRAR MAPA
 def logica(activeTaxis):
-    sizeTaxis = len(activeTaxis)
-    sizeCustomers = len(customers)
-    line = " "
-    space = " "
-
-    i = 0
-    j = 0
-    while i < sizeTaxis or j < sizeCustomers:
-        if i < sizeTaxis:
-            taxi = activeTaxis[i]
-            line += f"| {taxi[0]}{space * 5} {taxi[1]}{space * 8} {taxi[2]}{space * 8}"
-        
-        else:
-            line += "| " + (space * 29)
-
-        if j < sizeCustomers:
-            customer = customers[j]
-            line += f"| {customer[0]}{space * 5} {customer[1]}{space * 8} {customer[2]}{space * 8}"
-            j += 1
-
-            if i < sizeTaxis and "Parado" in taxi[2]:
-                while j < sizeCustomers:
-                    customer = customers[j]
-                    line += "| " + space * 29 + f"| {customer[0]}{space * 5} {customer[1]}{space * 8} {customer[2]}{space * 8}"
-                    j += 1
-            
-            i += 1
-            while i < sizeTaxis and taxis[i][1] == customer[0]:
-                line += f"| {taxis[i][0]}{space * 5} {taxis[i][1]}{space * 8} {taxis[i][2]}{space * 8}"
-                i += 1
-
-        else:
-            line += "|" + (space * 29) + "|\n"
-            i += 1
-
-        line += "-" * 60 + "\n"
-
-    return line
-
-def logica2(activeTaxis):
     sizeTaxis = len(activeTaxis)
     sizeCustomers = len(customers)
     space = " "
@@ -152,50 +75,78 @@ def logica2(activeTaxis):
 
     return line
 
+# PARA MOSTRAR MAPA
+def inicializacion_pantalla(stdscr):
+    curses.start_color()
+    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_GREEN) # Taxi en movimiento
+    curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_RED) # Taxi parado
+    curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_YELLOW) # Cliente
+    curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_BLUE) # Localización
+
+# PARA MOSTRAR MAPA
 # Mostrar un mapa
-def showMap():
+def showMap(stdscr):
+    global mapa
+
     activeTaxis = getTaxis()
-    str2Print = ""
 
-    str2Print += " " + "-" * 60 + " \n"
-    str2Print += "|                          EASY CAB                          |\n"
-    str2Print += " " + "-" * 60 + " \n"
-    str2Print += "|            Taxis            |           Clientes           |\n"
-    str2Print += " " + "-" * 60 + " \n"
-    str2Print += "| Id.  Destino    Estado      | Id.  Destino     Estado      |\n"
+    stdscr.addstr(0, 0, " " + "-" * 60 + " \n")
+    stdscr.addstr(1, 0, "|                          EASY CAB                          |\n")
+    stdscr.addstr(2, 0, " " + "-" * 60 + " \n")
+    stdscr.addstr(3, 0, "|            Taxis            |           Clientes           |\n")
+    stdscr.addstr(4, 0, " " + "-" * 60 + " \n")
+    stdscr.addstr(5, 0, "| Id.  Destino    Estado      | Id.  Destino     Estado      |\n")
 
-    str2Print += logica2(activeTaxis)
-    str2Print += "\n"
+    info_taxi = logica(activeTaxis)
+    
+    for i, linea in enumerate(info_taxi.splitlines()):
+        stdscr.addstr(7 + i, 0, linea)
 
-    for i in range(22): # Filas
-        if i == 0 or i == 1:
-            str2Print += "   "    
-        elif i < 11:
-            str2Print += f" {i - 1}|"
-        else:
-            str2Print += f"{i - 1}|"
+    stdscr.addstr(7 + len(activeTaxis), 0, " " + "-" * 60 + " ")
 
+    for i in range(20): # Filas
         for j in range(20): # Columnas
-            if i == 0:
-                if j == 0:
-                    str2Print += f"{j + 1}"
-                else:
-                    str2Print += f" {j + 1}"
+            celda = mapa[i][j]
 
-            elif i == 1:
-                if j == 0:
-                    str2Print += "_" * 50
-            else:
-                if j == 0:
-                    str2Print += f"{mapa[i-2][j]}"
-                elif j < 10:
-                    str2Print += f" {mapa[i-2][j]}"
-                else:
-                    str2Print += f"  {mapa[i-2][j]}"
-        
-        str2Print += "\n"
+            if isinstance(celda, int): # Taxi
+                color = curses.color_pair(1) if any(taxi['id'] == celda and
+                                                    taxi['en_movimiento'] for taxi in taxis) else curses.color_pair(2)
+                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, str(celda), color)
+            elif celda.islower(): # Cliente
+                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(3))
+            elif celda.isupper(): # Localización
+                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(4))
+            else: # Celda vacía
+                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, '.')
 
-    return str2Print
+    stdscr.refresh()
+
+# PARA MOSTRAR MAPA
+def actualizacion_mapa():
+    global mapa
+
+    mapa = [["." for _ in range(20)] for _ in range(20)]
+
+    for taxi in taxis:
+        x, y = taxi['posicion']
+        mapa[x % 20][y % 20] = taxi['id']
+
+    for cliente in customers:
+        x, y = cliente['posicion']
+        mapa[x % 20][y % 20] = cliente['id'].lower()
+
+    for lugar in localizaciones:
+        x, y = cliente['posicion']
+        mapa[x % 20][y % 20] = lugar['id'].upper()
+
+# PARA MOSTRAR MAPA
+def main_curses(stdscr):
+    inicializacion_pantalla(stdscr)
+
+    while True:
+        actualizacion_mapa()
+        showMap(stdscr)
+        time.sleep(1)
 
 # Buscar un taxi por su ID y resetea los taxis que no se encuentren activos
 def searchTaxiID(idTaxi):
@@ -247,9 +198,6 @@ def setTaxiDestination(destination, idCustomer):
         return False
 
     return True
-
-
-
 
 # Se autentica el taxi buscándolo en la base de datos e enía un mensaje
 def authTaxi(conn):
@@ -387,6 +335,10 @@ def main(port):
 
     threadResquests = threading.Thread(target=areActive)
     threadResquests.start()
+
+    # PARA MOSTRAR MAPA
+    threadCurses = threading.Thread(target=curses.wraper, args=main_curses)
+    threadCurses.satart()
 
     return 0
 

@@ -123,6 +123,31 @@ def logica(activeTaxis):
 
     return line
 
+def logica2(activeTaxis):
+    sizeTaxis = len(activeTaxis)
+    sizeCustomers = len(customers)
+    space = " "
+
+    line = ""
+    maxSize = max(sizeTaxis, sizeCustomers)
+    for i in range(maxSize):
+        if i < sizeTaxis:
+            taxi = activeTaxis[i]
+            line += f"| {taxi[0]}{space * 5} {taxi[1]}{space * 8} {taxi[2]}{space * 8}"
+        
+        else:
+            line += "| " + (space * 29)
+
+        if i < sizeCustomers:
+            customer = customers[i]
+            line += f"| {customer[0]}{space * 5} {customer[1]}{space * 8} {customer[2]}{space * 8}"
+        
+        else:
+            line += f"|{space * 29}|\n"
+
+    line += "-" * 60 + "\n"
+
+    return line
 
 # Mostrar un mapa
 def showMap():
@@ -135,9 +160,8 @@ def showMap():
     str2Print += "|            Taxis            |           Clientes           |\n"
     str2Print += " " + "-" * 60 + " \n"
     str2Print += "| Id.  Destino    Estado      | Id.  Destino     Estado      |\n"
-    str2Print += " " + "-" * 60 + " \n"
 
-    str2Print += logica(activeTaxis)
+    str2Print += logica2(activeTaxis)
     str2Print += "\n"
 
     return str2Print

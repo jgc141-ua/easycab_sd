@@ -5,12 +5,15 @@ import kafka
 import signal
 import time
 
+import kafka.errors
+
 HEADER = 64
 FORMAT = 'utf-8'
 END_CONNECTION1 = "FIN"
 END_CONNECTION2 = "ERROR"
 KAFKA_IP = 0
 KAFKA_PORT = 0
+mapa = [["." for _ in range(20)] for _ in range(20)]
 taxis = []
 customers = []
 
@@ -133,19 +136,19 @@ def logica2(activeTaxis):
     for i in range(maxSize):
         if i < sizeTaxis:
             taxi = activeTaxis[i]
-            line += f"| {taxi[0]}{space * 5} {taxi[1]}{space * 8} {taxi[2]}{space * 8}"
+            line += f"|  {taxi[0]}{space * 5} {taxi[1]}{space * 8} {taxi[2]}{space * 8}"
         
         else:
-            line += "| " + (space * 29)
+            line += "|" + (space * 29)
 
         if i < sizeCustomers:
             customer = customers[i]
-            line += f"| {customer[0]}{space * 5} {customer[1]}{space * 8} {customer[2]}{space * 8}"
+            line += f"|  {customer[0]}{space * 5} {customer[1]}{space * 8} {customer[2]}{space * 8}|\n"
         
         else:
-            line += f"|{space * 29}|\n"
+            line += f"|{space * 30}|\n"
 
-    line += "-" * 60 + "\n"
+    line += " " + "-" * 60 + "\n"
 
     return line
 
@@ -163,6 +166,34 @@ def showMap():
 
     str2Print += logica2(activeTaxis)
     str2Print += "\n"
+
+    for i in range(22): # Filas
+        if i == 0 or i == 1:
+            str2Print += "   "    
+        elif i < 11:
+            str2Print += f" {i - 1}|"
+        else:
+            str2Print += f"{i - 1}|"
+
+        for j in range(20): # Columnas
+            if i == 0:
+                if j == 0:
+                    str2Print += f"{j + 1}"
+                else:
+                    str2Print += f" {j + 1}"
+
+            elif i == 1:
+                if j == 0:
+                    str2Print += "_" * 50
+            else:
+                if j == 0:
+                    str2Print += f"{mapa[i-2][j]}"
+                elif j < 10:
+                    str2Print += f" {mapa[i-2][j]}"
+                else:
+                    str2Print += f"  {mapa[i-2][j]}"
+        
+        str2Print += "\n"
 
     return str2Print
 
@@ -230,6 +261,7 @@ def authTaxi(conn):
         if searchTaxiID(idTaxi):
             msg2Send = f"VERIFICANDO SOLICITUD DEL TAXI {idTaxi}...\nVERIFICACIÓN SUPERADA."
             taxis.append(idTaxi)
+            mapa[0][0] = idTaxi
 
         print(msg2Send)
         conn.send(msg2Send.encode(FORMAT))
@@ -261,69 +293,77 @@ def sendMessageKafka(topic, msg):
 
 # Comprobar que los taxis y customers están activos (10 segundos)
 def areActive():
-    while True:
-        sendMessageKafka("Central2Taxi", "TAXI STATUS")
-        sendMessageKafka("Central2Customer", "CUSTOMER STATUS")
-
-        activeTaxis = []
-        activeCustomers = []
-        consumer = kafka.KafkaConsumer("Status", group_id="centralGroup", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
-        
-        startTime = time.time()
+    try:
         while True:
-            if time.time() - startTime > 10:
-                break
+            sendMessageKafka("Central2Taxi", "TAXI STATUS")
+            sendMessageKafka("Central2Customer", "CUSTOMER STATUS")
+
+            activeTaxis = []
+            activeCustomers = []
+            consumer = kafka.KafkaConsumer("Status", group_id="centralGroup", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
             
-            messages = consumer.poll(1000)
-            for topics, messagesValues in messages.items():
-                for msg in messagesValues:
-                    id = (msg.value.decode(FORMAT)).split(" ")[1]
-                    try:
-                        taxiID = int(id)
-                        activeTaxis.append(taxiID)
+            startTime = time.time()
+            while True:
+                if time.time() - startTime > 10:
+                    break
+                
+                messages = consumer.poll(1000)
+                for topics, messagesValues in messages.items():
+                    for msg in messagesValues:
+                        id = (msg.value.decode(FORMAT)).split(" ")[1]
+                        try:
+                            taxiID = int(id)
+                            activeTaxis.append(taxiID)
 
-                    except Exception:
-                        customerID = id
-                        activeCustomers.append(customerID)
+                        except Exception:
+                            customerID = id
+                            activeCustomers.append(customerID)
 
-        for taxi in taxis:
-            if taxi not in activeTaxis:
-                sendMessageKafka("Central2Taxi", f"FIN {taxi}")
-                print(f"DESCONEXIÓN DEL TAXI {taxi} NO ESPERADA.")
-                taxis.remove(taxi)
-                searchTaxiID(0)
-                print(showMap())
-            
-        for customer in customers:
-            if customer[0] not in activeCustomers:
-                sendMessageKafka("Central2Customer", f"FIN {customer[0]}")
-                print(f"DESCONEXIÓN DEL CLIENTE {customer[0]} NO ESPERADA.")
-                customers.remove(customer)
-                print(showMap())
+            for taxi in taxis:
+                if taxi not in activeTaxis:
+                    sendMessageKafka("Central2Taxi", f"FIN {taxi}")
+                    print(f"DESCONEXIÓN DEL TAXI {taxi} NO ESPERADA.")
+                    taxis.remove(taxi)
+                    searchTaxiID(0)
+                    print(showMap())
+                
+            for customer in customers:
+                if customer[0] not in activeCustomers:
+                    sendMessageKafka("Central2Customer", f"FIN {customer[0]}")
+                    print(f"DESCONEXIÓN DEL CLIENTE {customer[0]} NO ESPERADA.")
+                    customers.remove(customer)
+                    print(showMap())
 
-        consumer.close()
+            consumer.close()
+
+    except kafka.errors.NoBrokersAvailable:
+        print("ERROR DE KAFKA!!")
 
 # Leer todas las solicitudes de los clientes
 def requestCustomers():
-    consumer = kafka.KafkaConsumer("Customer2Central", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
-    for msg in consumer:
-        id = (msg.value.decode(FORMAT)).split(" ")[0]
-        ubicacion = (msg.value.decode(FORMAT)).split(" ")[1]
-        print(msg.value.decode(FORMAT))
+    try:
+        consumer = kafka.KafkaConsumer("Customer2Central", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
+        for msg in consumer:
+            id = (msg.value.decode(FORMAT)).split(" ")[0]
+            ubicacion = (msg.value.decode(FORMAT)).split(" ")[1]
+            print(msg.value.decode(FORMAT))
 
-        for customer in customers:
-            if customer[0] == id:
-                customers.remove(customer)
+            for customer in customers:
+                if customer[0] == id:
+                    customers.remove(customer)
 
-        if setTaxiDestination(ubicacion, id):
-            customers.append((id, ubicacion, "OK."))
-            sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO OK.")
-            sendMessageKafka("Central2Taxi", f"{ubicacion}")
-        else:
-            customers.append((id, ubicacion, "KO."))
-            sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO KO.")
+            if setTaxiDestination(ubicacion, id):
+                customers.append((id, ubicacion, "OK."))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO OK.")
+                sendMessageKafka("Central2Taxi", f"{ubicacion}")
+            else:
+                customers.append((id, ubicacion, "KO."))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO KO.")
 
-        print(showMap())
+            print(showMap())
+    
+    except kafka.errors.NoBrokersAvailable:
+        print("ERROR DE KAFKA!!")
 
 def main(port):
     server = socket.gethostbyname(socket.gethostname())

@@ -4,13 +4,16 @@
 # Librerías
 import socket # Para establecer la conexión de red entre las aplicaciones del sistema
 import sys # Para acceder a los argumentos de la línea de comandos
-#from kafka import kafkaProducer, KafkaConsumer   # type: ignore
+import kafka
 import json
 import time
+import threading
 
 HEADER = 64
 FORMAT = 'utf-8'
 FIN = 'FIN'
+KAFKA_IP = 0
+KAFKA_PORT = 0
 
 # Inicialización de la posición del taxi (indefinida)
 posicion_actual = None
@@ -29,7 +32,7 @@ def conexion_central(ip_central, port_central, id_taxi):
             mensaje_de_autenticacion = f'AUTENTICAR TAXI #{id_taxi}'
 
             # Envío del mensaje de autenticación
-            socket_creado.sendall(mensaje_de_autenticacion.encode(FORMAT))
+            socket_creado.send(mensaje_de_autenticacion.encode(FORMAT))
 
             # Espera de la respuesta de la central
             respuesta = socket_creado.recv(HEADER).decode(FORMAT)
@@ -38,7 +41,8 @@ def conexion_central(ip_central, port_central, id_taxi):
             print(f"{respuesta}")
 
             # Comprobamos si la autenticación fue válida o errónea
-            if respuesta[len(respuesta)-1] == "1":
+            if respuesta.split("\n")[1] == "VERIFICACIÓN SUPERADA.":
+                sendMessageKafka("Status", f"TAXI {id_taxi} ACTIVO.")
                 return socket_creado # Devolvemos el socket para usarlo después
             else:
                 return None
@@ -90,12 +94,44 @@ def recibir_mensajes_kafka(consumidor, id_taxi):
                 print(f"La central ha finalizado la conexión con el Taxi {id_taxi}")
                 break
 
-# Función principal de conexión del taxi
-def conexion_taxi(ip_central, port_central, ip_broker, port_broker, ip_sensores, port_sensores, id_taxi):
-    # Conexión con la central
-    socket_creado = conexion_central(ip_central, port_central, id_taxi)
+# Crear un productor y enviar un mensaje a través de Kafka con un topic y su mensaje
+def sendMessageKafka(topic, msg):
+    time.sleep(0.2)
+    producer = kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    producer.send(topic, msg.encode(FORMAT))
+    producer.flush()
+    producer.close()
 
-    if False:#socket_creado:
+# Recibe un servicio, una comprobación o un mensaje final
+def receiveServices(id_taxi):
+    consumer = kafka.KafkaConsumer("Central2Taxi", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    for msg in consumer:
+        message = msg.value.decode(FORMAT)
+        print(message)
+
+        if message == "TAXI STATUS":
+            sendMessageKafka("Status", f"TAXI {id_taxi} ACTIVO.")
+        elif message == f"FIN {id_taxi}":
+            consumer.close()
+
+        elif message == "DEATH CENTRAL":
+            consumer.close()
+            print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
+            return True
+
+
+
+def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
+    # Conexión con la central
+    conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
+
+    if conexion_verificada:
+        threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
+        threadServices.start()
+
+# Función principal de conexión del taxi
+def conexion_taxi(ip_central, port_central, KAFKA_IP, KAFKA_PORT, ip_sensores, port_sensores, id_taxi):
+    if False:#conexion_verificada:
         # Inicializamos el productor y el consumidor de kafka
         broker = f'{ip_broker}:{port_broker}'
         productor = kafkaProducer(bootstrap_servers = [broker], value_serializer = lambda v: json.dumps(v).encode(FORMAT))
@@ -120,15 +156,15 @@ if __name__ == "__main__":
     if len(sys.argv) == 8:
         ip_central = sys.argv[1]
         port_central = sys.argv[2]
-        ip_broker = 0#sys.argv[3]
-        port_broker = 0#sys.argv[4]
-        ip_sensores = 0#sys.argv[5]
-        port_sensores = 0#sys.argv[6]
+        KAFKA_IP = sys.argv[3]
+        KAFKA_PORT = sys.argv[4]
+        ip_sensores = sys.argv[5]
+        port_sensores = sys.argv[6]
         id_taxi = sys.argv[7]
 
         # Conexión del taxi con la central y kafka
-        conexion_taxi(ip_central, port_central, ip_broker, port_broker, ip_sensores, port_sensores, id_taxi)
+        main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)
 
     else:
-        print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP GESTOR DE COLAS> <PUERTO GESTOR DE COLAS> <IP EC_S> <PUERTO EC_S> <ID TAXI>")
+        print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP BOOTSTRAP-SERVER> <PUERTO BOOTSTRAP-SERVER> <IP EC_S> <PUERTO EC_S> <ID TAXI>")
 

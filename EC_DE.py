@@ -5,7 +5,6 @@
 import socket # Para establecer la conexión de red entre las aplicaciones del sistema
 import sys # Para acceder a los argumentos de la línea de comandos
 import kafka
-import json
 import time
 import threading
 
@@ -182,16 +181,21 @@ def receiveServices(id_taxi):
             print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
             return True
 
-# Función encargada de enviar la incidencia a la central
-def enviar_incidencia_a_central(ip_central, port_central, incidencia):
-    addr_central = (ip_central, int(port_central))
+# Función encargada de enviar la incidencia a la central usando kafka
+def enviar_estado_a_central(estado, incidencia=None):
+    producer = kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    
+    if incidencia:
+        mensaje = f"{estado}, INCIDENCIA: {incidencia}"
+    else:
+        mensaje = estado
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_central:
-        socket_central.connect(addr_central)
-
-        socket_central.send(incidencia.encode(FORMAT))
-
-        print(f"[ENVÍO] Incidencia enviada a la central: {incidencia}")
+    # Enviar el estado actual al topic de Kafka
+    producer.send('InfoEstadoTaxi', mensaje.encode(FORMAT))
+    producer.flush()
+    producer.close()
+    
+    print(f"[KAFKA] Estado enviado a la central: {mensaje}")
 
 # Función encargada de recibir el estado de los sensores
 def recibir_estado_sensor(ip_sensores, port_sensores):
@@ -221,10 +225,13 @@ def recibir_estado_sensor(ip_sensores, port_sensores):
                             print(f"[CUIDADO] Incidencia recibida: {incidencia}")
                             estado_anterior = "KO"
                             incidencia_detectada = incidencia
-                            # enviar_incidencia_a_central(ip_central, port_central, incidencia)
+                            enviar_estado_a_central(estado, incidencia)
                         elif estado_anterior == "KO" and estado == "OK":
                             print(f"[SOLUCIONADO] Incidencia ({incidencia_detectada}) solucionada")
                             estado_anterior = "OK"
+                            enviar_estado_a_central(estado, incidencia)
+                        else:
+                            enviar_estado_a_central(estado, incidencia)
 
                         print(f"[ESTADO] Estado recibido: {estado}")
 
@@ -238,8 +245,17 @@ def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
     conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
 
     if conexion_verificada:
+        threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(ip_sensores, port_sensores))
         threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
+
+        threadRecibeEstados.start()
         threadServices.start()
+
+        threadRecibeEstados.join()
+        threadServices.join()
+    else:
+        print(f"Fallo de autenticación, taxi {id_taxi} inhabilitado, no se encuentra en la base de datos")
+        sys.exit(1)
 
 # Main
 if __name__ == "__main__":
@@ -255,8 +271,6 @@ if __name__ == "__main__":
 
         # Conexión del taxi con la central y kafka
         main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)
-
-        recibir_estado_sensor(ip_sensores, port_sensores)
 
     else:
         print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP BOOTSTRAP-SERVER> <PUERTO BOOTSTRAP-SERVER> <IP EC_S> <PUERTO EC_S> <ID TAXI>")

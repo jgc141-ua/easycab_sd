@@ -314,6 +314,14 @@ def requestCustomers():
     except kafka.errors.NoBrokersAvailable:
         print("ERROR DE KAFKA!!")
 
+# Función que recibe las incidencias desde Kafka
+def recibir_estado_taxi():
+    consumer = kafka.KafkaConsumer('InfoEstadoTaxi', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
+
+    for mensaje in consumer:
+        mensj = mensaje.value.decode(FORMAT)
+        print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
+
 def main(port):
     server = socket.gethostbyname(socket.gethostname())
 
@@ -336,6 +344,9 @@ def main(port):
 
     threadResquests = threading.Thread(target=areActive)
     threadResquests.start()
+
+    threadInfoEstadoTaxi = threading.Thread(target=recibir_estado_taxi)
+    threadInfoEstadoTaxi.start()
 
     # PARA MOSTRAR MAPA
     # threadCurses = threading.Thread(target=curses.wraper, args=main_curses)

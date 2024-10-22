@@ -36,27 +36,33 @@ def enviar_estado(ip_DE, port_DE):
     global TIPO_DE_INCIDENCIA
     global TAXI_CAIDO
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
-        socket_creado.connect((ip_DE, int(port_DE)))
-        print(f"[CONECTADO] Conectado a {ip_DE}:{port_DE}")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
+            socket_creado.connect((ip_DE, int(port_DE)))
+            print(f"[CONECTADO] Conectado a {ip_DE}:{port_DE}")
 
-        while not DESCONECTADO:
-            try:
-                estado = KO if INCIDENCIA_DETECTADA else OK
+            while not DESCONECTADO:
+                try:
+                    estado = KO if INCIDENCIA_DETECTADA else OK
 
-                if INCIDENCIA_DETECTADA:
-                    estado = estado + f", INCIDENCIA: {TIPO_DE_INCIDENCIA}"
+                    if INCIDENCIA_DETECTADA:
+                        estado = estado + f", INCIDENCIA: {TIPO_DE_INCIDENCIA}"
 
-                socket_creado.send(estado.encode(FORMAT))
+                    socket_creado.send(estado.encode(FORMAT))
 
-                print(f"[ENVÍO] Estado enviado: {estado}")
-                time.sleep(1)
+                    print(f"[ENVÍO] Estado enviado: {estado}")
+                    time.sleep(1)
 
-            except Exception as e:
-                print("Taxi caído") 
-                print("Sensor sin taxi, sensor roto, cae sensor")
-                TAXI_CAIDO = True
-                sys.exit(1)
+                except Exception as e:
+                    print("Taxi caído") 
+                    print("Sensor sin taxi, sensor roto, cae sensor")
+                    TAXI_CAIDO = True
+                    sys.exit(1)
+    
+    except ConnectionRefusedError as e:
+        print("Taxi sin autenticar, sensor inhabilitado")
+        TAXI_CAIDO = True
+        sys.exit(1)
 
 # Función encargada de detectar incidencias cuando se presiona una tecla
 def detectar_incidencia():
@@ -119,14 +125,14 @@ def detectar_incidencia():
 def sensor(ip_DE, port_DE):
     global TAXI_CAIDO
 
-    hilo_1 = threading.Thread(target=enviar_estado, args=(ip_DE, port_DE))
-    hilo_2 = threading.Thread(target=detectar_incidencia)
+    threadEnviaEstado = threading.Thread(target=enviar_estado, args=(ip_DE, port_DE))
+    threadDetectaIncidencia = threading.Thread(target=detectar_incidencia)
 
-    hilo_1.start()
-    hilo_2.start()  
+    threadEnviaEstado.start()
+    threadDetectaIncidencia.start()  
 
-    hilo_1.join()
-    hilo_2.join()
+    threadEnviaEstado.join()
+    threadDetectaIncidencia.join()
 
     if TAXI_CAIDO == True:
         sys.exit(1)

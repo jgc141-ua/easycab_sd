@@ -6,7 +6,7 @@ import signal
 import time
 
 # PARA MOSTRAR MAPA
-import curses
+#import curses
 
 import kafka.errors
 
@@ -77,11 +77,12 @@ def logica(activeTaxis):
 
 # PARA MOSTRAR MAPA
 def inicializacion_pantalla(stdscr):
-    curses.start_color()
-    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_GREEN) # Taxi en movimiento
-    curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_RED) # Taxi parado
-    curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_YELLOW) # Cliente
-    curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_BLUE) # Localización
+    #curses.start_color()
+    #curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_GREEN) # Taxi en movimiento
+    #curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_RED) # Taxi parado
+    #curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_YELLOW) # Cliente
+    #curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_BLUE) # Localización
+    return 0
 
 # PARA MOSTRAR MAPA
 # Mostrar un mapa
@@ -108,16 +109,16 @@ def showMap(stdscr):
         for j in range(20): # Columnas
             celda = mapa[i][j]
 
-            if isinstance(celda, int): # Taxi
-                color = curses.color_pair(1) if any(taxi['id'] == celda and
-                                                    taxi['en_movimiento'] for taxi in taxis) else curses.color_pair(2)
-                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, str(celda), color)
-            elif celda.islower(): # Cliente
-                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(3))
-            elif celda.isupper(): # Localización
-                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(4))
-            else: # Celda vacía
-                stdscr.addstr(8 + len(activeTaxis) + i, j * 3, '.')
+            #if isinstance(celda, int): # Taxi
+                # color = curses.color_pair(1) if any(taxi['id'] == celda and
+                                                    # taxi['en_movimiento'] for taxi in taxis) else curses.color_pair(2)
+                #stdscr.addstr(8 + len(activeTaxis) + i, j * 3, str(celda), color)
+            #elif celda.islower(): # Cliente
+                #stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(3))
+            #elif celda.isupper(): # Localización
+                #stdscr.addstr(8 + len(activeTaxis) + i, j * 3, celda, curses.color_pair(4))
+            #else: # Celda vacía
+                #stdscr.addstr(8 + len(activeTaxis) + i, j * 3, '.')
 
     stdscr.refresh()
 
@@ -337,8 +338,8 @@ def main(port):
     threadResquests.start()
 
     # PARA MOSTRAR MAPA
-    threadCurses = threading.Thread(target=curses.wraper, args=main_curses)
-    threadCurses.satart()
+    # threadCurses = threading.Thread(target=curses.wraper, args=main_curses)
+    # threadCurses.satart()
 
     return 0
 

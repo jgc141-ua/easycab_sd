@@ -81,35 +81,6 @@ def algoritmo_a_estrella(inicio, destino):
 
     return None
 
-# Función encargada de enviar la incidencia a la central
-def enviar_incidencia_a_central(ip_central, port_central, incidencia):
-    addr_central = (ip_central, int(port_central))
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_central:
-        socket_central.connect(addr_central)
-
-        socket_central.send(incidencia.encode(FORMAT))
-
-        print(f"[ENVÍO] Incidencia enviada a la central: {incidencia}")
-
-# Función encargada de recibir incidencias de EC_S y reenviarla a la central
-def recibe_incidencia(ip_central, port_central, ip_S, port_S):
-    addr_DE = (ip_S, port_S)
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
-        servidor.bind(addr_DE)
-        servidor.listen()
-        print(f"[ESCUCHA] Esperando incidencias en {ip_S}:{port_S}...")
-
-        while True:
-            conn, addr = servidor.accept()
-
-            with conn:
-                incidencia = conn.recv(HEADER).decode(FORMAT)
-                print("[RECIBIDO] Incidencia recibida: {incidencia}")
-
-                enviar_incidencia_a_central(ip_central, port_central, incidencia)
-
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
 def conexion_central(ip_central, port_central, id_taxi):
     try:
@@ -211,6 +182,57 @@ def receiveServices(id_taxi):
             print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
             return True
 
+# Función encargada de enviar la incidencia a la central
+def enviar_incidencia_a_central(ip_central, port_central, incidencia):
+    addr_central = (ip_central, int(port_central))
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_central:
+        socket_central.connect(addr_central)
+
+        socket_central.send(incidencia.encode(FORMAT))
+
+        print(f"[ENVÍO] Incidencia enviada a la central: {incidencia}")
+
+# Función encargada de recibir el estado de los sensores
+def recibir_estado_sensor(ip_sensores, port_sensores):
+    addr_DE = (ip_sensores, int(port_sensores))
+    estado_anterior = "OK"
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(addr_DE)
+        servidor.listen()
+        print(f"[ESCUCHA] Esperando estado de sensores en {ip_sensores}:{port_sensores}...")
+
+        incidencia_detectada = ""
+
+        while True:
+            conn, _ = servidor.accept()
+            with conn:
+                while True:
+                    try:
+                        estado = conn.recv(HEADER).decode(FORMAT)
+
+                        if "INCIDENCIA" in estado:
+                            estado, incidencia = estado.split(", INCIDENCIA: ")
+                        else:
+                            incidencia = None
+
+                        if estado_anterior == "OK" and estado == "KO":
+                            print(f"[CUIDADO] Incidencia recibida: {incidencia}")
+                            estado_anterior = "KO"
+                            incidencia_detectada = incidencia
+                            # enviar_incidencia_a_central(ip_central, port_central, incidencia)
+                        elif estado_anterior == "KO" and estado == "OK":
+                            print(f"[SOLUCIONADO] Incidencia ({incidencia_detectada}) solucionada")
+                            estado_anterior = "OK"
+
+                        print(f"[ESTADO] Estado recibido: {estado}")
+
+                    except Exception as e:
+                        print("Sensor caído") 
+                        print("Taxi sin sensor, peligro de accidente, taxi parado")
+                        sys.exit(1)
+ 
 def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
     # Conexión con la central
     conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
@@ -234,7 +256,7 @@ if __name__ == "__main__":
         # Conexión del taxi con la central y kafka
         main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)
 
-        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(ip_central, port_central, ip_sensores, port_sensores))
-        hilo_incidencias.start()
+        recibir_estado_sensor(ip_sensores, port_sensores)
+
     else:
         print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP BOOTSTRAP-SERVER> <PUERTO BOOTSTRAP-SERVER> <IP EC_S> <PUERTO EC_S> <ID TAXI>")

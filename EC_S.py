@@ -17,6 +17,26 @@ INCIDENCIA_DETECTADA = False
 TIPO_DE_INCIDENCIA = ""
 TAXI_CAIDO = False
 
+# Función encargada de conectar el sensor con el digital engine
+def conectar_a_DE(ip_DE, puerto_DE):
+    intentos = 0
+    max_intentos = 5
+
+    while intentos < max_intentos:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((ip_DE, int(puerto_DE)))
+            print(f"[CONECTADO] Sensor conectado al Digital Engine en {ip_DE}:{puerto_DE}")
+            return s
+        
+        except ConnectionError:
+            intentos += 1
+            print(f"[ERROR] No se pudo conectar al Digital Engine en {ip_DE}:{puerto_DE}. Intento {intentos}/{max_intentos}. Reintentando...")
+            time.sleep(3)  
+
+    print(f"[FALLO] No se pudo establecer conexión después de {max_intentos} intentos. Cerrando sensor.")
+    return None
+
 # Función encargada de capturar una tecla, sin tener que pulsar Enter en Windows
 def capturar_tecla():
     global TAXI_CAIDO
@@ -125,16 +145,23 @@ def detectar_incidencia():
 def sensor(ip_DE, port_DE):
     global TAXI_CAIDO
 
-    threadEnviaEstado = threading.Thread(target=enviar_estado, args=(ip_DE, port_DE))
-    threadDetectaIncidencia = threading.Thread(target=detectar_incidencia)
+    conexion_digital_engine = conectar_a_DE(ip_DE, port_DE)
 
-    threadEnviaEstado.start()
-    threadDetectaIncidencia.start()  
+    if conexion_digital_engine:
 
-    threadEnviaEstado.join()
-    threadDetectaIncidencia.join()
+        threadEnviaEstado = threading.Thread(target=enviar_estado, args=(ip_DE, port_DE))
+        threadDetectaIncidencia = threading.Thread(target=detectar_incidencia)
 
-    if TAXI_CAIDO == True:
+        threadEnviaEstado.start()
+        threadDetectaIncidencia.start()  
+
+        threadEnviaEstado.join()
+        threadDetectaIncidencia.join()
+
+        if TAXI_CAIDO == True:
+            sys.exit(1)
+
+    else:
         sys.exit(1)
 
 # Main

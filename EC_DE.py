@@ -111,6 +111,7 @@ def conexion_central(ip_central, port_central, id_taxi):
         
     except ConnectionError:
         print(f"Error de conexión con la central en {ip_central}:{port_central}")
+
     except Exception as e:
         print(f"Error generado: {str(e)}")
         return None
@@ -182,15 +183,14 @@ def receiveServices(id_taxi):
             return True
 
 # Función encargada de enviar la incidencia a la central usando kafka
-def enviar_estado_a_central(estado, incidencia=None):
+def enviar_estado_a_central(id_taxi, estado, incidencia=None):
     producer = kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
     
     if incidencia:
-        mensaje = f"{estado}, INCIDENCIA: {incidencia}"
+        mensaje = f"TAXI {id_taxi}, {estado}, INCIDENCIA: {incidencia}"
     else:
-        mensaje = estado
+        mensaje = f"TAXI {id_taxi}, {estado}"
 
-    # Enviar el estado actual al topic de Kafka
     producer.send('InfoEstadoTaxi', mensaje.encode(FORMAT))
     producer.flush()
     producer.close()
@@ -198,7 +198,7 @@ def enviar_estado_a_central(estado, incidencia=None):
     print(f"[KAFKA] Estado enviado a la central: {mensaje}")
 
 # Función encargada de recibir el estado de los sensores
-def recibir_estado_sensor(ip_sensores, port_sensores):
+def recibir_estado_sensor(id_taxi, ip_sensores, port_sensores):
     addr_DE = (ip_sensores, int(port_sensores))
     estado_anterior = "OK"
 
@@ -225,13 +225,13 @@ def recibir_estado_sensor(ip_sensores, port_sensores):
                             print(f"[CUIDADO] Incidencia recibida: {incidencia}")
                             estado_anterior = "KO"
                             incidencia_detectada = incidencia
-                            enviar_estado_a_central(estado, incidencia)
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
                         elif estado_anterior == "KO" and estado == "OK":
                             print(f"[SOLUCIONADO] Incidencia ({incidencia_detectada}) solucionada")
                             estado_anterior = "OK"
-                            enviar_estado_a_central(estado, incidencia)
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
                         else:
-                            enviar_estado_a_central(estado, incidencia)
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
 
                         print(f"[ESTADO] Estado recibido: {estado}")
 
@@ -240,21 +240,45 @@ def recibir_estado_sensor(ip_sensores, port_sensores):
                         print("Taxi sin sensor, peligro de accidente, taxi parado")
                         sys.exit(1)
  
+# Función encargada de recibir la conexión del sensor con el digital engine
+def esperar_conexion_sensor(ip_sensores, port_sensores):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+            servidor.bind((ip_sensores, int(port_sensores)))
+            servidor.listen()  
+            print(f"[ESPERA] Esperando conexión del sensor en {ip_sensores}:{port_sensores}...")
+            
+            conn, addr = servidor.accept() 
+            print(f"[CONECTADO] Sensor conectado desde {addr}")
+            return conn  
+    except Exception as e:
+        print(f"[ERROR] No se pudo establecer conexión con el sensor: {str(e)}")
+        return None
+
 def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
-    # Conexión con la central
-    conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
+    # Conexión con el sensor
+    conexion_recibida_sensor = esperar_conexion_sensor(ip_sensores, port_sensores)
 
-    if conexion_verificada:
-        threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(ip_sensores, port_sensores))
-        threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
+    if conexion_recibida_sensor:
 
-        threadRecibeEstados.start()
-        threadServices.start()
+        # Conexión con la central
+        conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
 
-        threadRecibeEstados.join()
-        threadServices.join()
+        if conexion_verificada:
+            threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(id_taxi, ip_sensores, port_sensores))
+            threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
+
+            threadRecibeEstados.start()
+            threadServices.start()
+
+            threadRecibeEstados.join()
+            threadServices.join()
+        else:
+            print(f"Fallo de autenticación, taxi {id_taxi} inhabilitado, no se encuentra en la base de datos")
+            sys.exit(1)
+    
     else:
-        print(f"Fallo de autenticación, taxi {id_taxi} inhabilitado, no se encuentra en la base de datos")
+        print(f"Fallo de conexión con el sensor")
         sys.exit(1)
 
 # Main

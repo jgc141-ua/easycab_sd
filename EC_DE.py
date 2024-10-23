@@ -19,7 +19,7 @@ KAFKA_IP = 0
 KAFKA_PORT = 0
 
 # Inicialización de la posición del taxi (indefinida)
-posicion_actual = None
+posicion_actual = {'x': 1, 'y': 1} 
 
 # Para el algoritmo A* --> dimensiones del mapa
 TAM_MAPA = 20
@@ -33,8 +33,8 @@ def heuristica(pos_actual, pos_destino):
 
 # Para el algoritmo A* --> movimiento esférico
 def movimiento_esferico(posicion, movimiento):
-    nueva_posX = (posicion[0] + movimiento[0]) % TAM_MAPA
-    nueva_posY = (posicion[1] + movimiento[1]) % TAM_MAPA
+    nueva_posX = (posicion[0] + movimiento[0] - 1) % TAM_MAPA + 1
+    nueva_posY = (posicion[1] + movimiento[1] - 1) % TAM_MAPA + 1
     return (nueva_posX, nueva_posY)
 
 # Algoritmo A*
@@ -80,6 +80,75 @@ def algoritmo_a_estrella(inicio, destino):
 
     return None
 
+# Función encargada de enviar eventos del taxi a través de Kafka 
+def enviar_movimientos_Taxi(productor, id_taxi, topic, direccion):
+    global posicion_actual
+
+    if posicion_actual is not None:
+        mensaje = f"TAXI {id_taxi} MOVIMIENTO: {direccion}, POSICIÓN: x={posicion_actual['x']}, y={posicion_actual['y']}"
+
+        # Enviar el mensaje a Kafka
+        productor.send(topic, value=mensaje.encode(FORMAT))
+        productor.flush()  
+
+        print(f"[EVENTO, KAFKA] {mensaje}")
+    else:
+        print(f"[ERROR] Taxi no tiene una posición definida para enviar")
+
+# Función encargada de mover el taxi y enviar la nueva posición a Kafka
+def mover_taxi(id_taxi, productor, destino):
+    global posicion_actual
+
+    # Determina el camino usando el algoritmo A* desde la posición actual al destino
+    camino = algoritmo_a_estrella((posicion_actual['x'], posicion_actual['y']), destino)
+
+    if camino is None:
+        print(f"[ERROR] No se pudo encontrar un camino al destino {destino}")
+        return
+
+    paso_anterior = (posicion_actual['x'], posicion_actual['y'])
+
+    # Mueve el taxi por cada paso en el camino
+    for paso in camino:
+        nueva_posX, nueva_posY = paso
+
+        direccion = determinar_direccion(paso_anterior, (nueva_posX, nueva_posY))
+
+        posicion_actual['x'] = nueva_posX
+        posicion_actual['y'] = nueva_posY
+
+        print(f"[MOVIMIENTO] Taxi {id_taxi} se ha movido a la posición: {posicion_actual}")
+
+        # Enviar la nueva posición y dirección a Kafka
+        enviar_movimientos_Taxi(productor, id_taxi, 'TaxiMovimiento', direccion)
+
+        # Actualizar el paso anterior
+        paso_anterior = (nueva_posX, nueva_posY)
+
+        time.sleep(5)
+
+# Determina la dirección del movimiento basado en las coordenadas de origen y destino
+def determinar_direccion(origen, destino):
+    dx = destino[0] - origen[0]
+    dy = destino[1] - origen[1]
+
+    if dx == 0 and dy > 0:
+        return "Norte"
+    elif dx == 0 and dy < 0:
+        return "Sur"
+    elif dx > 0 and dy == 0:
+        return "Este"
+    elif dx < 0 and dy == 0:
+        return "Oeste"
+    elif dx > 0 and dy > 0:
+        return "Noreste"
+    elif dx > 0 and dy < 0:
+        return "Sureste"
+    elif dx < 0 and dy > 0:
+        return "Noroeste"
+    else:
+        return "Suroeste"
+
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
 def conexion_central(ip_central, port_central, id_taxi):
     try:
@@ -115,47 +184,6 @@ def conexion_central(ip_central, port_central, id_taxi):
     except Exception as e:
         print(f"Error generado: {str(e)}")
         return None
-    
-# Función encargada de enviar eventos del taxi a través de kafka
-def enviar_eventos_kafka(productor, id_taxi, mensaje_kafka):
-    global posicion_actual
-
-    if posicion_actual is not None:
-        evento = {
-            'tipo' : 'movimiento',
-            'id_taxi' : id_taxi,
-            'posicion' : f'x:{posicion_actual["x"]}, y:{posicion_actual["y"]}'
-        }
-
-        # Mensaje en kafka
-        productor.send(mensaje_kafka, value=evento)
-        productor.flush()
-
-        print(f"[EVENTO] Taxi {id_taxi} publicó su posición en kafka: {evento['posicion']}")
-    else:
-        print(f"[ERROR] Taxi no tiene una posición definida para enviar")
-
-# Función encargada de escuchar instrucciones desde kafka
-def recibir_mensajes_kafka(consumidor, id_taxi):
-    print(f"[ESPERANDO] Taxi {id_taxi} experando mensajes de la central...")
-
-    for mensaje in consumidor:
-        datos = mensaje.value
-        print(f"Mensaje recibido de la central: {datos}")
-
-        if datos['tipo'] == 'instruccion':
-            print(f"Instrucción recibida: {datos['instruccion']}")
-            if datos['instruccion'] == 'parar':
-                print(f"Taxi {id_taxi} se detiene")
-            elif datos['instruccion'] == 'reanudar':
-                print(f"Taxi {id_taxi} reanuda el proyecto")
-            elif datos['instruccion'] == 'mover':
-                posicion_nueva = datos['posicion_nueva']
-                posicion_actual = {'x': posicion_nueva['x'], 'y' : posicion_nueva['y']}
-                print(f"Taxi {id_taxi} movido a la nueva posición: {posicion_actual}")
-            elif datos['instruccion'] == FIN:
-                print(f"La central ha finalizado la conexión con el Taxi {id_taxi}")
-                break
 
 # Crear un productor y enviar un mensaje a través de Kafka con un topic y su mensaje
 def sendMessageKafka(topic, msg):
@@ -268,11 +296,17 @@ def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
             threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(id_taxi, ip_sensores, port_sensores))
             threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
 
+            destino = (TAM_MAPA, TAM_MAPA)  
+            threadMoverTaxi = threading.Thread(target=mover_taxi, args=(id_taxi, kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}"), destino))
+
             threadRecibeEstados.start()
             threadServices.start()
+            threadMoverTaxi.start()
 
             threadRecibeEstados.join()
             threadServices.join()
+            threadMoverTaxi.join()
+
         else:
             print(f"Fallo de autenticación, taxi {id_taxi} inhabilitado, no se encuentra en la base de datos")
             sys.exit(1)

@@ -19,8 +19,8 @@ def enviar_estado(ip_DE, port_DE):
     global DESCONECTADO
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
-        socket_creado.connect(ip_DE, int(port_DE))
-        print(f"[CONCECTADO] Conectado a {ip_DE, int(port_DE)}")
+        socket_creado.connect((ip_DE, int(port_DE)))
+        print(f"[CONCECTADO] Conectado a {ip_DE}:{port_DE}")
 
         while not DESCONECTADO:
             estado = OK
@@ -32,7 +32,7 @@ def enviar_estado(ip_DE, port_DE):
 # Función encargada de enviar la incidencia que se ha detectado a Digital Engine
 def envio_incidencia(ip_DE, port_DE, incidencia):    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_creado:
-        socket_creado.connect(ip_DE, int(port_DE))
+        socket_creado.connect((ip_DE, int(port_DE)))
 
         socket_creado.send(incidencia.encode(FORMAT))
 
@@ -96,4 +96,4 @@ if __name__ == "__main__":
         sensor(ip_DE, port_DE)
 
     else:
-        print("Número de argumentos incorrecto")
+        print("ERROR!! Falta por poner <IP EC_DE> <PUERTO EC_DE>")

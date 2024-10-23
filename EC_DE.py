@@ -94,7 +94,7 @@ def enviar_incidencia_a_central(ip_central, port_central, incidencia):
 
 # Función encargada de recibir incidencias de EC_S y reenviarla a la central
 def recibe_incidencia(ip_central, port_central, ip_S, port_S):
-    addr_DE = (ip_S, port_S)
+    addr_DE = (ip_S, int(port_S))
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
         servidor.bind(addr_DE)
@@ -199,7 +199,6 @@ def receiveServices(id_taxi):
     consumer = kafka.KafkaConsumer("Central2Taxi", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
     for msg in consumer:
         message = msg.value.decode(FORMAT)
-        print(message)
 
         if message == "TAXI STATUS":
             sendMessageKafka("Status", f"TAXI {id_taxi} ACTIVO.")
@@ -209,7 +208,6 @@ def receiveServices(id_taxi):
         elif message == "DEATH CENTRAL":
             consumer.close()
             print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
-            return True
 
 def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
     # Conexión con la central
@@ -231,10 +229,11 @@ if __name__ == "__main__":
         port_sensores = sys.argv[6]
         id_taxi = sys.argv[7]
 
+        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(KAFKA_IP, KAFKA_PORT, ip_sensores, port_sensores))
+        hilo_incidencias.start()
+
         # Conexión del taxi con la central y kafka
         main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)
 
-        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(ip_central, port_central, ip_sensores, port_sensores))
-        hilo_incidencias.start()
     else:
         print(f"ERROR!! Falta por poner <IP EC_CENTRAL> <PUERTO EC_CENTRAL> <IP BOOTSTRAP-SERVER> <PUERTO BOOTSTRAP-SERVER> <IP EC_S> <PUERTO EC_S> <ID TAXI>")

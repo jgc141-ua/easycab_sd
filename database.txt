@@ -1,6 +1,6 @@
-1,-,NO.Parado
+1,D,OK.Servicio e
 2,-,NO.Parado
-3,-,OK.Parado
+3,-,NO.Parado
 4,-,NO.Parado
 5,-,NO.Parado
 6,-,NO.Parado

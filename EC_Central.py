@@ -106,10 +106,12 @@ def mostrar_mapa(mapa, taxis, clientes):
         cliente_line = ""
         
         if i < len(taxis):
-            taxi = taxis[i]
-            taxi_line = f"{taxi['id']:<5} {taxi['destino']:<10} {taxi['estado']:<10}"
-        else:
-            taxi_line = " " * 25
+            # Si el taxi es una tupla, extraer sus valores
+            if isinstance(taxis[i], tuple):
+                id_taxi, destino_taxi, estado_taxi = taxis[i]
+                taxi_line = f"{id_taxi:<5} {destino_taxi:<10} {estado_taxi:<10}"
+            else:
+                taxi_line = " " * 25
         
         if i < len(clientes):
             cliente = clientes[i]
@@ -121,16 +123,22 @@ def mostrar_mapa(mapa, taxis, clientes):
 
     sys.stdout.write("------------------------------------------------------------\n")
 
+    sys.stdout.write("   " + " ".join([f"{i:2}" for i in range(1, 21)]) + "\n")
+    
+    sys.stdout.write("------------------------------------------------------------\n")
+
     # Mostrar el mapa utilizando streams
     for row in range(len(mapa)):
+        # Mostrar el número de fila (ajustado de 1-20)
+        sys.stdout.write(f"{row + 1:2} ")
         for col in range(len(mapa[row])):
             if isinstance(mapa[row][col], int):  # Taxis
-                sys.stdout.write(Fore.GREEN + f" {mapa[row][col]} ")
+                sys.stdout.write(Fore.GREEN + f"{mapa[row][col]:2} " + Style.RESET_ALL)
             elif mapa[row][col] == 'C':  # Clientes
-                sys.stdout.write(Fore.BLUE + f" C ")
+                sys.stdout.write(Fore.BLUE + " C  " + Style.RESET_ALL)
             else:
-                sys.stdout.write(f" X ")
-        sys.stdout.write("\n")  # Nueva línea para cada fila del mapa
+                sys.stdout.write(" X ")
+        sys.stdout.write("\n")  
 
     sys.stdout.write("------------------------------------------------------------\n")
     sys.stdout.write(f"{' ':<12} Estado general del sistema: OK\n")
@@ -310,7 +318,7 @@ def recibir_estado_taxi():
 
     for mensaje in consumer:
         mensj = mensaje.value.decode(FORMAT)
-        print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
+        # print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
 
 # PARA MOSTRAR MAPA
 ###############################################################################
@@ -334,38 +342,27 @@ def recibir_movimiento_taxi():
 # Función encargada de actualizar el mapa
 def actualizar_mapa_con_movimiento(mensaje):
     global mapa
-    partes = mensaje.split(", ")
-    id_taxi = partes[0].split(" ")[1]
-    direccion = partes[1].split(": ")[1].strip()
-    print(f"YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE {direccion}")
-    posicion = partes[2].split(": ")[1].strip()
-    print(posicion)
-    x, y = map(int, posicion.replace("POSICIÓN: x=", "").split(", y="))
+    partes = mensaje.split(": ")
+    id_taxi = int(partes[0].split(" ")[1].strip())  
+    direccion = partes[1].split(", ")[0].strip()
+    posicion = partes[2].strip() 
+    x, y = map(int, [coord.split("=")[1] for coord in posicion.split(", ")])
+
+    # Ajustar las coordenadas de 1-20 a 0-19 para usar en la matriz `mapa`
+    x -= 1
+    y -= 1
 
     # Limpiar la posición anterior del taxi
     for row in range(len(mapa)):
         for col in range(len(mapa[row])):
-            if isinstance(mapa[row][col], int) and mapa[row][col] == int(id_taxi):
+            if isinstance(mapa[row][col], int) and mapa[row][col] == id_taxi:
                 mapa[row][col] = "X"  # Cambia la posición anterior a "X"
 
-    # Actualiza la nueva posición en el mapa y verifica la dirección
+    # Actualiza la nueva posición en el mapa según la dirección
     if 0 <= x < len(mapa) and 0 <= y < len(mapa[0]):
-        if direccion == "Norte":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Sur":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Este":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Oeste":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Noreste":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Sureste":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Noroeste":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
-        elif direccion == "Suroeste":
-            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        if direccion in ["Norte", "Sur", "Este", "Oeste", "Noreste", "Sureste", "Noroeste", "Suroeste"]:
+            # Guarda el número del taxi en el mapa para ser coloreado en la función mostrar_mapa
+            mapa[x][y] = id_taxi
         else:
             print(f"[ERROR] Dirección no reconocida: {direccion}")
 
@@ -381,8 +378,6 @@ def main(port):
     server.bind(addr)
 
     print("CENTRAL INICIÁNDOSE...")
-
-    #map = array.array('B', bytes([0] * 400))
 
     searchTaxiID(0)
 

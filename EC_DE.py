@@ -296,7 +296,7 @@ def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
             threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(id_taxi, ip_sensores, port_sensores))
             threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
 
-            destino = (TAM_MAPA, TAM_MAPA)  
+            destino = (15, 15)  
             threadMoverTaxi = threading.Thread(target=mover_taxi, args=(id_taxi, kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}"), destino))
 
             threadRecibeEstados.start()

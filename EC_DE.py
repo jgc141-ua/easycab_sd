@@ -5,7 +5,6 @@
 import socket # Para establecer la conexión de red entre las aplicaciones del sistema
 import sys # Para acceder a los argumentos de la línea de comandos
 import kafka
-import json
 import time
 import threading
 
@@ -20,7 +19,7 @@ KAFKA_IP = 0
 KAFKA_PORT = 0
 
 # Inicialización de la posición del taxi (indefinida)
-posicion_actual = None
+posicion_actual = {'x': 1, 'y': 1} 
 
 # Para el algoritmo A* --> dimensiones del mapa
 TAM_MAPA = 20
@@ -34,8 +33,8 @@ def heuristica(pos_actual, pos_destino):
 
 # Para el algoritmo A* --> movimiento esférico
 def movimiento_esferico(posicion, movimiento):
-    nueva_posX = (posicion[0] + movimiento[0]) % TAM_MAPA
-    nueva_posY = (posicion[1] + movimiento[1]) % TAM_MAPA
+    nueva_posX = (posicion[0] + movimiento[0] - 1) % TAM_MAPA + 1
+    nueva_posY = (posicion[1] + movimiento[1] - 1) % TAM_MAPA + 1
     return (nueva_posX, nueva_posY)
 
 # Algoritmo A*
@@ -81,34 +80,74 @@ def algoritmo_a_estrella(inicio, destino):
 
     return None
 
-# Función encargada de enviar la incidencia a la central
-def enviar_incidencia_a_central(ip_central, port_central, incidencia):
-    addr_central = (ip_central, int(port_central))
+# Función encargada de enviar eventos del taxi a través de Kafka 
+def enviar_movimientos_Taxi(productor, id_taxi, topic, direccion):
+    global posicion_actual
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_central:
-        socket_central.connect(addr_central)
+    if posicion_actual is not None:
+        mensaje = f"TAXI {id_taxi} MOVIMIENTO: {direccion}, POSICIÓN: x={posicion_actual['x']}, y={posicion_actual['y']}"
 
-        socket_central.send(incidencia.encode(FORMAT))
+        # Enviar el mensaje a Kafka
+        productor.send(topic, value=mensaje.encode(FORMAT))
+        productor.flush()  
 
-        print(f"[ENVÍO] Incidencia enviada a la central: {incidencia}")
+        print(f"[EVENTO, KAFKA] {mensaje}")
+    else:
+        print(f"[ERROR] Taxi no tiene una posición definida para enviar")
 
-# Función encargada de recibir incidencias de EC_S y reenviarla a la central
-def recibe_incidencia(ip_central, port_central, ip_S, port_S):
-    addr_DE = (ip_S, int(port_S))
+# Función encargada de mover el taxi y enviar la nueva posición a Kafka
+def mover_taxi(id_taxi, productor, destino):
+    global posicion_actual
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
-        servidor.bind(addr_DE)
-        servidor.listen()
-        print(f"[ESCUCHA] Esperando incidencias en {ip_S}:{port_S}...")
+    # Determina el camino usando el algoritmo A* desde la posición actual al destino
+    camino = algoritmo_a_estrella((posicion_actual['x'], posicion_actual['y']), destino)
 
-        while True:
-            conn, addr = servidor.accept()
+    if camino is None:
+        print(f"[ERROR] No se pudo encontrar un camino al destino {destino}")
+        return
 
-            with conn:
-                incidencia = conn.recv(HEADER).decode(FORMAT)
-                print("[RECIBIDO] Incidencia recibida: {incidencia}")
+    paso_anterior = (posicion_actual['x'], posicion_actual['y'])
 
-                enviar_incidencia_a_central(ip_central, port_central, incidencia)
+    # Mueve el taxi por cada paso en el camino
+    for paso in camino:
+        nueva_posX, nueva_posY = paso
+
+        direccion = determinar_direccion(paso_anterior, (nueva_posX, nueva_posY))
+
+        posicion_actual['x'] = nueva_posX
+        posicion_actual['y'] = nueva_posY
+
+        print(f"[MOVIMIENTO] Taxi {id_taxi} se ha movido a la posición: {posicion_actual}")
+
+        # Enviar la nueva posición y dirección a Kafka
+        enviar_movimientos_Taxi(productor, id_taxi, 'TaxiMovimiento', direccion)
+
+        # Actualizar el paso anterior
+        paso_anterior = (nueva_posX, nueva_posY)
+
+        time.sleep(5)
+
+# Determina la dirección del movimiento basado en las coordenadas de origen y destino
+def determinar_direccion(origen, destino):
+    dx = destino[0] - origen[0]
+    dy = destino[1] - origen[1]
+
+    if dx == 0 and dy > 0:
+        return "Norte"
+    elif dx == 0 and dy < 0:
+        return "Sur"
+    elif dx > 0 and dy == 0:
+        return "Este"
+    elif dx < 0 and dy == 0:
+        return "Oeste"
+    elif dx > 0 and dy > 0:
+        return "Noreste"
+    elif dx > 0 and dy < 0:
+        return "Sureste"
+    elif dx < 0 and dy > 0:
+        return "Noroeste"
+    else:
+        return "Suroeste"
 
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
 def conexion_central(ip_central, port_central, id_taxi):
@@ -141,50 +180,10 @@ def conexion_central(ip_central, port_central, id_taxi):
         
     except ConnectionError:
         print(f"Error de conexión con la central en {ip_central}:{port_central}")
+
     except Exception as e:
         print(f"Error generado: {str(e)}")
         return None
-    
-# Función encargada de enviar eventos del taxi a través de kafka
-def enviar_eventos_kafka(productor, id_taxi, mensaje_kafka):
-    global posicion_actual
-
-    if posicion_actual is not None:
-        evento = {
-            'tipo' : 'movimiento',
-            'id_taxi' : id_taxi,
-            'posicion' : f'x:{posicion_actual["x"]}, y:{posicion_actual["y"]}'
-        }
-
-        # Mensaje en kafka
-        productor.send(mensaje_kafka, value=evento)
-        productor.flush()
-
-        print(f"[EVENTO] Taxi {id_taxi} publicó su posición en kafka: {evento['posicion']}")
-    else:
-        print(f"[ERROR] Taxi no tiene una posición definida para enviar")
-
-# Función encargada de escuchar instrucciones desde kafka
-def recibir_mensajes_kafka(consumidor, id_taxi):
-    print(f"[ESPERANDO] Taxi {id_taxi} experando mensajes de la central...")
-
-    for mensaje in consumidor:
-        datos = mensaje.value
-        print(f"Mensaje recibido de la central: {datos}")
-
-        if datos['tipo'] == 'instruccion':
-            print(f"Instrucción recibida: {datos['instruccion']}")
-            if datos['instruccion'] == 'parar':
-                print(f"Taxi {id_taxi} se detiene")
-            elif datos['instruccion'] == 'reanudar':
-                print(f"Taxi {id_taxi} reanuda el proyecto")
-            elif datos['instruccion'] == 'mover':
-                posicion_nueva = datos['posicion_nueva']
-                posicion_actual = {'x': posicion_nueva['x'], 'y' : posicion_nueva['y']}
-                print(f"Taxi {id_taxi} movido a la nueva posición: {posicion_actual}")
-            elif datos['instruccion'] == FIN:
-                print(f"La central ha finalizado la conexión con el Taxi {id_taxi}")
-                break
 
 # Crear un productor y enviar un mensaje a través de Kafka con un topic y su mensaje
 def sendMessageKafka(topic, msg):
@@ -208,14 +207,112 @@ def receiveServices(id_taxi):
         elif message == "DEATH CENTRAL":
             consumer.close()
             print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
+            return True
+
+# Función encargada de enviar la incidencia a la central usando kafka
+def enviar_estado_a_central(id_taxi, estado, incidencia=None):
+    producer = kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    
+    if incidencia:
+        mensaje = f"TAXI {id_taxi}, {estado}, INCIDENCIA: {incidencia}"
+    else:
+        mensaje = f"TAXI {id_taxi}, {estado}"
+
+    producer.send('InfoEstadoTaxi', mensaje.encode(FORMAT))
+    producer.flush()
+    producer.close()
+    
+    print(f"[KAFKA] Estado enviado a la central: {mensaje}")
+
+# Función encargada de recibir el estado de los sensores
+def recibir_estado_sensor(id_taxi, ip_sensores, port_sensores):
+    addr_DE = (ip_sensores, int(port_sensores))
+    estado_anterior = "OK"
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+        servidor.bind(addr_DE)
+        servidor.listen()
+        print(f"[ESCUCHA] Esperando estado de sensores en {ip_sensores}:{port_sensores}...")
+
+        incidencia_detectada = ""
+
+        while True:
+            conn, _ = servidor.accept()
+            with conn:
+                while True:
+                    try:
+                        estado = conn.recv(HEADER).decode(FORMAT)
+
+                        if "INCIDENCIA" in estado:
+                            estado, incidencia = estado.split(", INCIDENCIA: ")
+                        else:
+                            incidencia = None
+
+                        if estado_anterior == "OK" and estado == "KO":
+                            print(f"[CUIDADO] Incidencia recibida: {incidencia}")
+                            estado_anterior = "KO"
+                            incidencia_detectada = incidencia
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
+                        elif estado_anterior == "KO" and estado == "OK":
+                            print(f"[SOLUCIONADO] Incidencia ({incidencia_detectada}) solucionada")
+                            estado_anterior = "OK"
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
+                        else:
+                            enviar_estado_a_central(id_taxi, estado, incidencia)
+
+                        print(f"[ESTADO] Estado recibido: {estado}")
+
+                    except Exception as e:
+                        print("Sensor caído") 
+                        print("Taxi sin sensor, peligro de accidente, taxi parado")
+                        sys.exit(1)
+ 
+# Función encargada de recibir la conexión del sensor con el digital engine
+def esperar_conexion_sensor(ip_sensores, port_sensores):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
+            servidor.bind((ip_sensores, int(port_sensores)))
+            servidor.listen()  
+            print(f"[ESPERA] Esperando conexión del sensor en {ip_sensores}:{port_sensores}...")
+            
+            conn, addr = servidor.accept() 
+            print(f"[CONECTADO] Sensor conectado desde {addr}")
+            return conn  
+    except Exception as e:
+        print(f"[ERROR] No se pudo establecer conexión con el sensor: {str(e)}")
+        return None
 
 def main(ip_central, port_central, ip_sensores, port_sensores, id_taxi):
-    # Conexión con la central
-    conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
+    # Conexión con el sensor
+    conexion_recibida_sensor = esperar_conexion_sensor(ip_sensores, port_sensores)
 
-    if conexion_verificada:
-        threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
-        threadServices.start()
+    if conexion_recibida_sensor:
+
+        # Conexión con la central
+        conexion_verificada = conexion_central(ip_central, port_central, id_taxi)
+
+        if conexion_verificada:
+            threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(id_taxi, ip_sensores, port_sensores))
+            threadServices = threading.Thread(target=receiveServices, args=(id_taxi))
+
+            destino = (TAM_MAPA, TAM_MAPA)  
+            threadMoverTaxi = threading.Thread(target=mover_taxi, args=(id_taxi, kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}"), destino))
+
+            threadRecibeEstados.start()
+            threadServices.start()
+            threadMoverTaxi.start()
+
+            threadRecibeEstados.join()
+            threadServices.join()
+            threadMoverTaxi.join()
+
+        else:
+            print(f"Fallo de autenticación, taxi {id_taxi} inhabilitado, no se encuentra en la base de datos")
+            sys.exit(1)
+    
+    else:
+        print(f"Fallo de conexión con el sensor")
+        sys.exit(1)
 
 # Main
 if __name__ == "__main__":

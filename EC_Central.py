@@ -8,6 +8,14 @@ from colorama import *
 
 import kafka.errors
 
+# PARA MOSTRAR MAPA
+#######################################
+import colorama
+from colorama import Fore, Back, Style
+import sys
+import time
+#######################################
+
 HEADER = 64
 FORMAT = 'utf-8'
 END_CONNECTION1 = "FIN"

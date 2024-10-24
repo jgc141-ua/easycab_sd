@@ -91,16 +91,13 @@ def mostrar_mapa(mapa, taxis, clientes):
     sys.stdout.flush()  # Asegurar que todo se envía a la consola
 ###############################################################################################################
 
-# TAXIS
-taxis = []
-
 # Función que recibe las incidencias desde Kafka
 def recibir_estado_taxi():
     consumer = kafka.KafkaConsumer('InfoEstadoTaxi', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
 
     for mensaje in consumer:
         mensj = mensaje.value.decode(FORMAT)
-        # print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
+        print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
 
 # PARA MOSTRAR MAPA
 ###############################################################################
@@ -283,13 +280,6 @@ def requestCustomers():
             sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO RECHAZADO.")
             mostrarTaxisCustomers()
 
-
-
-
-
-
-
-
 # GESTIONA EL MANTENIMIENTO DE LOS CLIENTES O LOS TAXIS
 # Deshabilitar los taxis o clientes no activos
 def disableNoActives(activeTaxis, activeCustomers):
@@ -343,11 +333,6 @@ def areActives():
         consumer.close()
         time.sleep(1)
 
-
-
-
-
-
 def mostrarTaxisCustomers():
     print("\nTAXIS", end=": ")
     for taxi in taxis:
@@ -380,6 +365,19 @@ def main(port):
 
     threadAreActives = threading.Thread(target=areActives)
     threadAreActives.start()
+
+
+    threadInfoEstadoTaxi = threading.Thread(target=recibir_estado_taxi)
+    threadInfoEstadoTaxi.start()
+
+    # PARA MOSTRAR MAPA
+    #######################################################################
+    threadMostrarMapa = threading.Thread(target=hilo_mostrar_mapa)
+    threadMostrarMapa.start()
+
+    threadMovimientoTaxi = threading.Thread(target=recibir_movimiento_taxi)
+    threadMovimientoTaxi.start()
+    ########################################################################
 
     return 0
 

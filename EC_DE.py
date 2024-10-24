@@ -96,36 +96,59 @@ def enviar_movimientos_Taxi(productor, id_taxi, topic, direccion):
         print(f"[ERROR] Taxi no tiene una posición definida para enviar")
 
 # Función encargada de mover el taxi y enviar la nueva posición a Kafka
+camino_pendiente = None  # Variable global para almacenar el camino pendiente
+estado_actual = "OK"   # Inicializa el estado como OK globalmente
+
 def mover_taxi(id_taxi, productor, destino):
-    global posicion_actual
+    global posicion_actual, camino_pendiente, estado_actual
 
-    # Determina el camino usando el algoritmo A* desde la posición actual al destino
-    camino = algoritmo_a_estrella((posicion_actual['x'], posicion_actual['y']), destino)
+    while True:  # Bucle para permitir que el taxi revise su estado continuamente
+        # Si hay un camino pendiente desde una pausa anterior (estado KO), lo reutilizamos
+        if camino_pendiente:
+            camino = camino_pendiente
+            camino_pendiente = None  # Limpiamos el camino pendiente ya que vamos a continuar
+        else:
+            # Si no hay camino pendiente, calculamos uno nuevo
+            camino = algoritmo_a_estrella((posicion_actual['x'], posicion_actual['y']), destino)
 
-    if camino is None:
-        print(f"[ERROR] No se pudo encontrar un camino al destino {destino}")
-        return
+        if camino is None:
+            print(f"[ERROR] No se pudo encontrar un camino al destino {destino}")
+            return
 
-    paso_anterior = (posicion_actual['x'], posicion_actual['y'])
+        paso_anterior = (posicion_actual['x'], posicion_actual['y'])
 
-    # Mueve el taxi por cada paso en el camino
-    for paso in camino:
-        nueva_posX, nueva_posY = paso
+        # Mueve el taxi por cada paso en el camino
+        for paso in camino:
+            nueva_posX, nueva_posY = paso
 
-        direccion = determinar_direccion(paso_anterior, (nueva_posX, nueva_posY))
+            # Verificamos si el estado es KO
+            if estado_actual == "KO":
+                print(f"[KO] Taxi {id_taxi} está en KO, guardando el camino pendiente.")
+                camino_pendiente = camino[camino.index(paso):]  # Guardamos el camino restante
+                break  # Salimos del bucle for, pero no del bucle while
 
-        posicion_actual['x'] = nueva_posX
-        posicion_actual['y'] = nueva_posY
+            direccion = determinar_direccion(paso_anterior, (nueva_posX, nueva_posY))
 
-        print(f"[MOVIMIENTO] Taxi {id_taxi} se ha movido a la posición: {posicion_actual}")
+            posicion_actual['x'] = nueva_posX
+            posicion_actual['y'] = nueva_posY
 
-        # Enviar la nueva posición y dirección a Kafka
-        enviar_movimientos_Taxi(productor, id_taxi, 'TaxiMovimiento', direccion)
+            print(f"[MOVIMIENTO] Taxi {id_taxi} se ha movido a la posición: {posicion_actual}")
 
-        # Actualizar el paso anterior
-        paso_anterior = (nueva_posX, nueva_posY)
+            # Enviar la nueva posición y dirección a Kafka
+            enviar_movimientos_Taxi(productor, id_taxi, 'TaxiMovimiento', direccion)
 
-        time.sleep(5)
+            # Verificamos si el taxi ha llegado a su destino
+            if (nueva_posX, nueva_posY) == destino:
+                print(f"[DESTINO] Taxi {id_taxi} ha llegado a su destino: {destino}")
+                return  # Salimos de la función, no se enviarán más movimientos
+
+            # Actualizar el paso anterior
+            paso_anterior = (nueva_posX, nueva_posY)
+
+            time.sleep(5)  # Simula el tiempo de movimiento
+
+        # Aquí puedes agregar un pequeño retraso antes de volver a revisar el estado
+        time.sleep(1)  # Espera 1 segundo antes de volver a verificar el estado
 
 # Determina la dirección del movimiento basado en las coordenadas de origen y destino
 def determinar_direccion(origen, destino):
@@ -226,6 +249,7 @@ def enviar_estado_a_central(id_taxi, estado, incidencia=None):
 
 # Función encargada de recibir el estado de los sensores
 def recibir_estado_sensor(id_taxi, ip_sensores, port_sensores):
+    global estado_actual
     addr_DE = (ip_sensores, int(port_sensores))
     estado_anterior = "OK"
 
@@ -248,6 +272,8 @@ def recibir_estado_sensor(id_taxi, ip_sensores, port_sensores):
                         else:
                             incidencia = None
 
+                        estado_actual = estado
+
                         if estado_anterior == "OK" and estado == "KO":
                             print(f"[CUIDADO] Incidencia recibida: {incidencia}")
                             estado_anterior = "KO"
@@ -266,7 +292,7 @@ def recibir_estado_sensor(id_taxi, ip_sensores, port_sensores):
                         print("Sensor caído") 
                         print("Taxi sin sensor, peligro de accidente, taxi parado")
                         sys.exit(1)
- 
+
 # Función encargada de recibir la conexión del sensor con el digital engine
 def esperar_conexion_sensor(ip_sensores, port_sensores):
     try:
@@ -325,9 +351,6 @@ if __name__ == "__main__":
         ip_sensores = sys.argv[5]
         port_sensores = sys.argv[6]
         id_taxi = sys.argv[7]
-
-        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(KAFKA_IP, KAFKA_PORT, ip_sensores, port_sensores))
-        hilo_incidencias.start()
 
         # Conexión del taxi con la central y kafka
         main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)

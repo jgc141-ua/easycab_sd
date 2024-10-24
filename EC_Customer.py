@@ -10,6 +10,7 @@ KAFKA_PORT = 0
 PRODUCER = 0
 disconnect = False
 
+# Borrar mensajes acumulados en los topics
 def deleteNoNecessaryMessages(ID):
     consumer = kafka.KafkaConsumer("Central2Customer", group_id=f"servicesCustomer_{ID}", auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 

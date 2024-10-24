@@ -1,4 +1,4 @@
-1,-,OK.Parado
+1,-,NO.Parado
 2,-,OK.Parado
 3,-,NO.Parado
 4,-,NO.Parado

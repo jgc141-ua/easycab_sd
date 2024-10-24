@@ -2,12 +2,9 @@ import sys
 import socket
 import threading
 import kafka
-import signal
 import time
-
-import pygame
-# PARA MOSTRAR MAPA
-import curses
+import colorama
+from colorama import *
 
 import kafka.errors
 
@@ -19,8 +16,135 @@ KAFKA_IP = 0
 KAFKA_PORT = 0
 PRODUCER = 0
 
+# PARA MOSTRAR MAPA
+#######################################
+mapa = [["x" for _ in range(20)] for _ in range(20)]
+taxis = []
+customers = []
+localizaciones = []
+
+colorama.init(autoreset=True)
+
+def mostrar_mapa(mapa, taxis, clientes):
+    sys.stdout.write("------------------------------------------------------------\n")
+    sys.stdout.write(f"{' ':<15} *** EASY CAB Release 1 ***\n")
+    sys.stdout.write("------------------------------------------------------------\n")
+    
+    # Mostrar encabezado de taxis y clientes
+    sys.stdout.write(f"{' ':<10} {'Taxis':<18} {'|':<8} {'Clientes'}\n")
+    sys.stdout.write("------------------------------------------------------------\n")
+    sys.stdout.write(f"{' ':<3} {'Id.':<5} {'Destino':<10} {'Estado':<8} {'|':<2} {'Id.':<5} {'Destino':<10} {'Estado':<10}\n")
+    sys.stdout.write("------------------------------------------------------------\n")
+
+    # Mostrar los taxis y los clientes en filas paralelas
+    for i in range(max(len(taxis), len(clientes))):
+        taxi_line = ""
+        cliente_line = ""
+        
+        if i < len(taxis):
+            taxi = taxis[i]
+            taxi_line = f"{taxi['id']:<5} {taxi['destino']:<10} {taxi['estado']:<10}"
+        else:
+            taxi_line = " " * 25
+        
+        if i < len(clientes):
+            cliente = clientes[i]
+            cliente_line = f"{cliente['id']:<5} {cliente['destino']:<10} {cliente['estado']:<10}"
+        else:
+            cliente_line = " " * 25
+        
+        sys.stdout.write(f"{taxi_line} {cliente_line}\n")
+
+    sys.stdout.write("------------------------------------------------------------\n")
+
+    # Mostrar el mapa utilizando streams
+    for row in range(len(mapa)):
+        for col in range(len(mapa[row])):
+            if isinstance(mapa[row][col], int):  # Taxis
+                sys.stdout.write(Fore.GREEN + f" {mapa[row][col]} ")
+            elif mapa[row][col] == 'C':  # Clientes
+                sys.stdout.write(Fore.BLUE + f" C ")
+            else:
+                sys.stdout.write(f" X ")
+        sys.stdout.write("\n")  # Nueva línea para cada fila del mapa
+
+    sys.stdout.write("------------------------------------------------------------\n")
+    sys.stdout.write(f"{' ':<12} Estado general del sistema: OK\n")
+    sys.stdout.write("------------------------------------------------------------\n")
+
+    sys.stdout.flush()  # Asegurar que todo se envía a la consola
+###############################################################################################################
+
 # TAXIS
 taxis = []
+
+# Función que recibe las incidencias desde Kafka
+def recibir_estado_taxi():
+    consumer = kafka.KafkaConsumer('InfoEstadoTaxi', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
+
+    for mensaje in consumer:
+        mensj = mensaje.value.decode(FORMAT)
+        print(f"[CENTRAL] Estado Taxi recibido: {mensj}")
+
+# PARA MOSTRAR MAPA
+###############################################################################
+def hilo_mostrar_mapa():
+    # while True:
+        mostrar_mapa(mapa, taxis, customers)
+        #time.sleep(1)  # Espera 1 segundo antes de mostrar el mapa nuevamente
+###############################################################################
+
+# Función encargada de recibir el movimiento del taxi
+def recibir_movimiento_taxi():
+    consumer = kafka.KafkaConsumer('TaxiMovimiento', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
+
+    for mensaje in consumer:
+        mensj = mensaje.value.decode(FORMAT)
+        print(f"[CENTRAL] Movimiento recibido: {mensj}")
+
+        # Actualiza el mapa y muestra la nueva posición
+        actualizar_mapa_con_movimiento(mensj)
+
+# Función encargada de actualizar el mapa
+def actualizar_mapa_con_movimiento(mensaje):
+    global mapa
+    partes = mensaje.split(", ")
+    id_taxi = partes[0].split(" ")[1]
+    direccion = partes[1].split(": ")[1].strip()
+    print(f"YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE {direccion}")
+    posicion = partes[2].split(": ")[1].strip()
+    print(posicion)
+    x, y = map(int, posicion.replace("POSICIÓN: x=", "").split(", y="))
+
+    # Limpiar la posición anterior del taxi
+    for row in range(len(mapa)):
+        for col in range(len(mapa[row])):
+            if isinstance(mapa[row][col], int) and mapa[row][col] == int(id_taxi):
+                mapa[row][col] = "X"  # Cambia la posición anterior a "X"
+
+    # Actualiza la nueva posición en el mapa y verifica la dirección
+    if 0 <= x < len(mapa) and 0 <= y < len(mapa[0]):
+        if direccion == "Norte":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Sur":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Este":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Oeste":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Noreste":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Sureste":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Noroeste":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        elif direccion == "Suroeste":
+            mapa[x][y] = f"{Fore.GREEN}{id_taxi}{Style.RESET_ALL}"
+        else:
+            print(f"[ERROR] Dirección no reconocida: {direccion}")
+
+    # Muestra el mapa actualizado
+    mostrar_mapa(mapa, taxis, customers)
 
 # Gestionar los taxis
 CLEAN = 1 # Deshabilitar los no activos (y desconecta el cliente que podría tener asociado)

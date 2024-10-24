@@ -198,7 +198,6 @@ def receiveServices(id_taxi):
     consumer = kafka.KafkaConsumer("Central2Taxi", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
     for msg in consumer:
         message = msg.value.decode(FORMAT)
-        print(message)
 
         if message == "TAXI STATUS":
             sendMessageKafka("Status", f"TAXI {id_taxi} ACTIVO.")
@@ -326,6 +325,9 @@ if __name__ == "__main__":
         ip_sensores = sys.argv[5]
         port_sensores = sys.argv[6]
         id_taxi = sys.argv[7]
+
+        hilo_incidencias = threading.Thread(target=recibe_incidencia, args=(KAFKA_IP, KAFKA_PORT, ip_sensores, port_sensores))
+        hilo_incidencias.start()
 
         # Conexión del taxi con la central y kafka
         main(ip_central, port_central, ip_sensores, port_sensores, id_taxi)

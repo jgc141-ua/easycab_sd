@@ -1,4 +1,11 @@
 { 
+    "Ubication":[
+        {
+            "Id": "B"
+        }
+
+    ],
+
     "Requests":[
         { 
             "Id":"A"

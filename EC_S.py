@@ -44,8 +44,12 @@ def capturar_tecla():
     if TAXI_CAIDO == True:
         return None
     
-    if msvcrt.kbhit():  
-        return msvcrt.getch().decode(FORMAT).lower()
+    try:
+        if msvcrt.kbhit():  
+            return msvcrt.getch().decode(FORMAT).lower()
+    
+    except Exception:
+        print("Tecla no asgnada a una incidencia")
 
     return None
 

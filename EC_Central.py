@@ -6,6 +6,7 @@ import time
 import colorama
 from colorama import *
 import json
+import msvcrt
 
 import kafka.errors
 
@@ -58,7 +59,7 @@ def mostrar_mapa():
         cliente_line = f"{SPACE * 3}"
         
         if i < len(taxis):
-            taxi = getTaxi(taxis[i])
+            taxi = getTaxi(ONE, taxis[i])
             if taxi:
                 idTaxi = taxi[0]
                 destTaxi = taxi[1]
@@ -96,7 +97,17 @@ def mostrar_mapa():
     
     sys.stdout.write(LINE)
 
-    # Mostrar el mapa utilizando streams
+    showMapObjects()
+
+    sys.stdout.write(LINE)
+    sys.stdout.write(f"{' ':<16} Estado general del sistema: OK\n")
+    sys.stdout.write(LINE)
+
+    sys.stdout.flush()  # Asegurar que todo se envía a la consola
+###############################################################################################################
+
+# Mostrar taxis, localizaciones, clientes y movimientos en el mapa
+def showMapObjects():
     for row in range(len(mapa)):
         # Mostrar el número de fila (ajustado de 1-20)
         sys.stdout.write(f"{row + 1:2} ")
@@ -104,7 +115,31 @@ def mostrar_mapa():
             mapValue = mapa[row][col][0]
 
             if isinstance(mapValue, int):  # Taxis
-                sys.stdout.write(Fore.GREEN + f"{mapValue:2} " + Style.RESET_ALL)
+                taxi = getTaxi(ONE, mapValue)
+                destinationTaxi = taxi[1]
+                activeTaxi = taxi[2]
+                serviceTaxi = taxi[3]
+
+                if activeTaxi == "OK" and serviceTaxi.startswith("Servicio"):
+                    idCustomer = serviceTaxi.split(" ")[1]
+
+                    checkCustomer = 0
+                    for customer in customers:
+                        if customer[0] == idCustomer:
+                            checkCustomer = customer
+                            break
+                    
+                    # Si el destino del TAXI coincide con el destino del cliente que esta en esa casilla se ponen juntos y, además, el ID del customer que hace el servicio el taxi debe coincidir con el ID del Customer que esta en esa posicion
+                    if idCustomer in mapa[row][col] and destinationTaxi == checkCustomer[2]: 
+                        sys.stdout.write(Fore.GREEN + f"{mapValue:2}{idCustomer}" + Style.RESET_ALL)
+                    else:
+                        sys.stdout.write(Fore.GREEN + f"{mapValue:2} " + Style.RESET_ALL)
+
+                elif activeTaxi == "OK" and serviceTaxi == "Parado":
+                    sys.stdout.write(Fore.RED + f"{mapValue:2} " + Style.RESET_ALL)
+
+                elif activeTaxi == "KO":
+                    sys.stdout.write(Fore.RED + f"{mapValue:2}!" + Style.RESET_ALL)
 
             elif isinstance(mapValue, str) and len(mapValue) == 1 and mapValue.isalpha():
                 if mapValue.isupper():  # Localizaciones
@@ -117,35 +152,21 @@ def mostrar_mapa():
 
         sys.stdout.write("\n")  
 
-    sys.stdout.write(LINE)
-    sys.stdout.write(f"{' ':<16} Estado general del sistema: OK\n")
-    sys.stdout.write(LINE)
+# Obtener una localización según las coordenadas
+def getLocationByCoords(x, y):
+    for location in locations:
+        if location[1] == x and location[2] == y:
+            return location
 
-    sys.stdout.flush()  # Asegurar que todo se envía a la consola
-###############################################################################################################
+    return None
 
-# Función que recibe las incidencias desde Kafka
-def recibir_estado_taxi():
-    consumer = kafka.KafkaConsumer('InfoEstadoTaxi', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
-
-    for msg in consumer:
-        msg = msg.value.decode(FORMAT)
-        idTaxi = msg.split(", ")[0]
-        status = msg.split(", ")[1]
+# Obtener una localización según la ID de una localización
+def getLocation(customerLocation):
+    for location in locations:
+        if location[0] == customerLocation:
+            return (location[1], location[2])
         
-        if status == "KO":
-            print(f"[CENTRAL] Estado Taxi recibido: {msg}")
-
-# Función encargada de recibir el movimiento del taxi
-def recibir_movimiento_taxi():
-    consumer = kafka.KafkaConsumer('TaxiMovimiento', bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="centralGroup")
-
-    for mensaje in consumer:
-        mensj = mensaje.value.decode(FORMAT)
-        print(f"[CENTRAL] Movimiento recibido: {mensj}")
-
-        # Actualiza el mapa y muestra la nueva posición
-        actualizar_mapa_con_movimiento(mensj)
+    return None
 
 # Localizaciones de EC_locations.json
 def loadLocations():
@@ -192,41 +213,136 @@ def freePositionMap(id):
 # Función encargada de actualizar el mapa
 def actualizar_mapa_con_movimiento(mensaje):
     global mapa
-    partes = mensaje.split(": ")
-    id_taxi = int(partes[0].split(" ")[1].strip())  
-    direccion = partes[1].split(", ")[0].strip()
-    posicion = partes[2].strip() 
-    x, y = map(int, [coord.split("=")[1] for coord in posicion.split(", ")])
+    words = mensaje.split(" ")
+    idTaxi = int(words[1])  
+    direccion = words[3]
+    x = int(words[5])
+    y = int(words[6])
+
+    #x, y = map(int, [coord.split("=")[1] for coord in posicion.split(", ")])
 
     # Ajustar las coordenadas de 1-20 a 0-19 para usar en la matriz `mapa`
     x -= 1
     y -= 1
 
+    serviceCustomer = -1
     # Limpiar la posición anterior del taxi
     for row in range(len(mapa)):
         for col in range(len(mapa[row])):
-            if isinstance(mapa[row][col][0], int) and mapa[row][col][0] == id_taxi:
+            if isinstance(mapa[row][col][0], int) and mapa[row][col][0] == idTaxi:
                 if len(mapa[row][col]) > 1:
                     mapa[row][col].pop(0) # Cambia la posición anterior a posición vacía
+
+                    taxi = getTaxi(ONE, idTaxi)
+                    destinationTaxi = taxi[1]
+                    activeTaxi = taxi[2]
+                    serviceTaxi = taxi[3]
+
+                    if activeTaxi == "OK" and serviceTaxi.startswith("Servicio"):
+                        idCustomer = serviceTaxi.split(" ")[1]
+
+                        checkCustomer = 0
+                        for customer in customers:
+                            if customer[0] == idCustomer:
+                                checkCustomer = customer
+                                break
+                        
+                        # Si el destino del TAXI coincide con el destino del cliente que esta en esa casilla se ponen juntos y, además, el ID del customer que hace el servicio el taxi debe coincidir con el ID del Customer que esta en esa posicion
+                        if idCustomer in mapa[row][col] and destinationTaxi == checkCustomer[2] and len(mapa[row][col]) > 1:
+                            print(mapa[row][col])
+                            customerIndex = mapa[row][col].index(checkCustomer[0])
+                            serviceCustomer = mapa[row][col][customerIndex]
+                            mapa[row][col].pop(customerIndex) # Cambia la posición anterior a posición vacía
 
     # Actualiza la nueva posición en el mapa según la dirección
     if 0 <= x < len(mapa) and 0 <= y < len(mapa[0]):
         if direccion in ["Norte", "Sur", "Este", "Oeste", "Noreste", "Sureste", "Noroeste", "Suroeste"]:
             # Guarda el número del taxi en el mapa para ser coloreado en la función mostrar_mapa
-            mapa[x][y].insert(0, id_taxi)
+            if serviceCustomer != -1:
+                mapa[x][y].insert(0, serviceCustomer)
+            mapa[x][y].insert(0, idTaxi)
         else:
             print(f"[ERROR] Dirección no reconocida: {direccion}")
 
     # Muestra el mapa actualizado
     mostrar_mapa()
 
+def changeDestination():
+    with open("database.txt", "r+") as file:
+        for line in file:
+            id = int(line.split(",")[0]) # 1 (ejemplo)
+            destinationTaxi = line.split(",")[1] # - (ejemplo)
+            status = line.split(",")[2] # OK.Parado (ejemplo)
+            active = status.split(".")[0] # OK (ejemplo)
+            service = status.split(".")[1] # Parado (ejemplo)
+
+            
+
 # Gestionar los taxis
 CLEAN = 1 # Deshabilitar los no activos (y desconecta el cliente que podría tener asociado)
+def manageTaxiCLEAN(line, id, service, destinationTaxi, status):
+    customer2Disconnect = 0
+    if id not in taxis:
+        if service.startswith("Servicio"):
+            customer2Disconnect = (service.split(" ")[1]).split("\n")[0]
+
+        line = line.replace(destinationTaxi, "-")
+        line = line.replace(status, "NO.Parado\n")
+
+    return line, customer2Disconnect
+
 CONNECT2TAXI = 2 # Añadir un servicio (cliente) a un taxi
-DISCONNECT = 3 # Liberar un taxi de su servicio (cliente)
-def manageTaxi(option, idCustomer=0, destination=0):
+def manageTaxiCONNECT2TAXI(line, id, destinationTaxi, active, destination, idCustomer, modified, modifiedTaxiID):
+    if not modified and destinationTaxi == "-" and active == "OK":
+        for location in locations:
+            if location[0] == destination:
+                modified = True
+                modifiedTaxiID = id
+                line = line.replace("-", destination)
+                line = line.replace("Parado", f"Servicio {idCustomer}")
+                break
+
+    return line, modified, modifiedTaxiID
+
+DISCONNECT = 3 # Liberar un taxi de su servicio (cliente) debido a un error
+DISCONNECT_COMPLETED = 3.1 # Liberar un taxi de su servicio (cliente) por servicio completado
+def manageTaxiDISCONNECT(line, option, id, service, idCustomer, destinationTaxi, status):
+    if service == f"Servicio {idCustomer}\n":
+        line = line.replace(destinationTaxi, "-")
+        line = line.replace(status, "OK.Parado\n")
+
+        if DISCONNECT == option:
+            sendMessageKafka("Central2Taxi", f"TAXI {id} ERROR CUSTOMER")
+        elif DISCONNECT_COMPLETED == option:
+            sendMessageKafka("Central2Customer", f"CLIENTE {idCustomer} SERVICIO COMPLETADO.")
+
+    return line
+
+CHANGE_DESTINATION = 4 # Cambiar el destino de un taxi
+def manageTaxiCHANGE_DESTINATION(line, id, idTaxi, destinationTaxi, destination):
+    if id == idTaxi:
+        line = line.replace(destinationTaxi, destination)
+
+    return line
+
+OK = 5 # OK en taxi
+def manageTaxiOK(line, id, idTaxi, active):
+    if id == idTaxi and active == "KO":
+        line = line.replace(active, "OK")
+
+    return line
+
+KO = 6 # KO en taxi
+def manageTaxiKO(line, id, idTaxi, active):
+    if id == idTaxi and active == "OK":
+        line = line.replace(active, "KO")
+
+    return line
+
+def manageTaxi(option, idCustomer = 0, destination = 0, idTaxi = 0):
     modifiedLine = []
     modified = False
+    modifiedTaxiID = 0
     customer2Disconnect = 0
     with open("database.txt", "r+") as file:
         for line in file:
@@ -236,21 +352,23 @@ def manageTaxi(option, idCustomer=0, destination=0):
             active = status.split(".")[0] # OK (ejemplo)
             service = status.split(".")[1] # Parado (ejemplo)
 
-            if option == 1 and (id not in taxis): # Necesita option
-                if service.startswith("Servicio"):
-                    customer2Disconnect = (service.split(" ")[1]).split("\n")[0]
+            if option == 1:
+                line, customer2Disconnect = manageTaxiCLEAN(line, id, service, destinationTaxi, status)
 
-                line = line.replace(destinationTaxi, "-")
-                line = line.replace(status, "NO.Parado\n")
+            elif option == 2:
+                line, modified, modifiedTaxiID = manageTaxiCONNECT2TAXI(line, id, destinationTaxi, active, destination, idCustomer, modified, modifiedTaxiID)
 
-            if option == 2 and (destinationTaxi == "-" and active == "OK"): # Necesita option, idCustomer, destination
-                modified = True
-                line = line.replace("-", destination)
-                line = line.replace("Parado", f"Servicio {idCustomer}")
+            elif option == 3 or option == 3.1:
+                line = manageTaxiDISCONNECT(line, option, id, service, idCustomer, destinationTaxi, status)
 
-            if option == 3 and (service == f"Servicio {idCustomer}\n"): # Necesita option, idCustomer
-                line = line.replace(destinationTaxi, "-")
-                line = line.replace(status, "OK.Parado\n")
+            elif option == 4:
+                line = manageTaxiCHANGE_DESTINATION(line, id, idTaxi, destinationTaxi, destination)
+
+            elif option == 5:
+                line = manageTaxiOK(line, id, idTaxi, active)
+
+            elif option == 6:
+                line = manageTaxiKO(line, id, idTaxi, active)
                 
             modifiedLine.append(line)
         
@@ -258,22 +376,30 @@ def manageTaxi(option, idCustomer=0, destination=0):
         file.writelines(modifiedLine)
         file.truncate()
 
-    return modified, customer2Disconnect
+    return modified, customer2Disconnect, modifiedTaxiID
 
-# Obtener todos los datos de un taxi según su ID
-def getTaxi(idTaxi):
+# Obtener todos los datos de un taxi o todos los taxis
+ONE = 1 # Obtener solo 1 taxi
+ALL = 2 # Obtener todos los taxis activos de la base de datos
+def getTaxi(option, idTaxi = 0):
+    activeTaxis = []
     with open("database.txt", "r") as file:
         for line in file:
             id = int(line.split(",")[0]) # 1 (ejemplo)
+            status = line.split(",")[2] # OK.Parado (ejemplo)
+            active = status.split(".")[0] # OK (ejemplo)
             
-            if id == idTaxi:
+            if option == 1 and (id == idTaxi):
                 destinationTaxi = line.split(",")[1] # - (ejemplo)
                 status = line.split(",")[2] # OK.Parado (ejemplo)
                 active = status.split(".")[0] # OK (ejemplo)
-                service = status.split(".")[1] # Parado (ejemplo)
+                service = status.split(".")[1].split("\n")[0] # Parado (ejemplo)
+                return (id, destinationTaxi, active, service)
+            
+            if option == 2 and (active == "OK" or active == "KO"):
+                activeTaxis.append((id, active))
 
-                if active == "OK":
-                    return (id, destinationTaxi, active, service)
+    return activeTaxis
 
 # Buscar y activar un taxi por su ID
 def searchTaxiID(idTaxi):
@@ -297,6 +423,55 @@ def searchTaxiID(idTaxi):
 
     return exists
 
+# Recibe inicidencias y movimientos
+def receiveInfoTaxi():
+    consumer = kafka.KafkaConsumer("Taxi2Central", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"], group_id="Taxi2CentralGroup")
+
+    beforeStatus = {}
+    for msg in consumer:
+        msg = msg.value.decode(FORMAT)
+        
+        if msg.split(" ")[2] == "MOVIMIENTO":
+            actualizar_mapa_con_movimiento(msg)
+
+        elif msg.split(" ")[2] == "DESTINO":
+            destinoCoord = msg.split(" ")[3].split(",")
+            destino = (int(destinoCoord[0]), int(destinoCoord[1]))
+            customerID = msg.split(" ")[5]
+
+            destinoTaxi = getLocationByCoords(destino[0], destino[1])
+            for customer in customers:
+                if customer[0] == customerID:
+                    if destinoTaxi[0] == customer[1]:
+                        destinoTuple = getLocation(customer[2])
+                        x = destinoTuple[0]
+                        y = destinoTuple[1]
+                        sendMessageKafka("Central2Taxi", f"TAXI {idTaxi} DESTINO {x},{y} CLIENTE {customerID}")
+                        manageTaxi(CHANGE_DESTINATION, destination=customer[2], idTaxi=idTaxi)
+                    
+                    elif destinoTaxi[0] == customer[2]:
+                        manageTaxi(DISCONNECT_COMPLETED, customer[0]) # Desconectar cliente de taxi
+                        mostrar_mapa()
+
+        else:
+            idTaxi = int(msg.split(" ")[1])
+            status = msg.split(" ")[2]
+
+            if idTaxi in beforeStatus and status != beforeStatus[idTaxi]:
+                if beforeStatus[idTaxi] == "KO":
+                    manageTaxi(OK, 0, 0, idTaxi)
+                else:
+                    manageTaxi(KO, 0, 0, idTaxi)
+                
+                mostrar_mapa()
+
+            if status in ["OK", "KO"]:
+                for key in list(beforeStatus.keys()):
+                    if key not in taxis:
+                        del beforeStatus[idTaxi]
+
+                beforeStatus[idTaxi] = status
+
 # Se autentica el taxi buscándolo en la base de datos e envía un mensaje
 def authTaxi(conn):
     try:
@@ -306,7 +481,6 @@ def authTaxi(conn):
         msg2Send = f"VERIFICANDO SOLICITUD DEL TAXI {idTaxi}...\nVERIFICACIÓN NO SUPERADA."
         if searchTaxiID(idTaxi):
             msg2Send = f"VERIFICANDO SOLICITUD DEL TAXI {idTaxi}...\nVERIFICACIÓN SUPERADA."
-            mostrarTaxisCustomers()
 
         print(msg2Send)
         conn.send(msg2Send.encode(FORMAT))
@@ -338,32 +512,37 @@ def sendMessageKafka(topic, msg):
 def requestCustomers():
     consumer = kafka.KafkaConsumer("Customer2Central", group_id="customer2CentralGroup", bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
     for msg in consumer:
-        message = msg.value.decode(FORMAT)
+        msg = msg.value.decode(FORMAT)
 
-        if message == "ACTIVE?":
+        if msg == "ACTIVE?":
             sendMessageKafka("Central2Customer", "CENTRAL ACTIVE")
-            continue
+        else:
+            id = msg.split(" ")[0]
+            ubicacion = msg.split(" ")[1]
+            destino = msg.split(" ")[2]
 
-        id = message.split(" ")[0]
-        ubicacion = message.split(" ")[1]
-        destino = message.split(" ")[2]
+            for customer in customers:
+                if customer[0] == id:
+                    customers.remove(customer)
+                    freePositionMap(customer[0])
 
-        for customer in customers:
-            if customer[0] == id:
-                customers.remove(customer)
+            isConnected, _, idTaxi = manageTaxi(CONNECT2TAXI, id, ubicacion)
+            if isConnected:
+                customers.append((id, ubicacion, destino, f"OK. Taxi {idTaxi}"))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO ACEPTADO.")
+                
+                locationTuple = getLocation(ubicacion)
+                x = locationTuple[0]
+                y = locationTuple[1]
+                print(locationTuple)
+                sendMessageKafka("Central2Taxi", f"TAXI {idTaxi} DESTINO {x},{y} CLIENTE {id}")
+            
+            elif not isConnected:
+                customers.append((id, ubicacion, destino, "KO."))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO RECHAZADO.")
 
-        isConnected, _ = manageTaxi(CONNECT2TAXI, id, ubicacion)
-        if isConnected:
-            customers.append((id, ubicacion, destino, "OK."))
-            sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO ACEPTADO.")
-            sendMessageKafka("Central2Taxi", f"{ubicacion} {destino}")
-        
-        elif not isConnected:
-            customers.append((id, ubicacion, destino, "KO."))
-            sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO RECHAZADO.")
-
-        putCustomerLocation(id, ubicacion)
-        mostrar_mapa()
+            putCustomerLocation(id, ubicacion)
+            mostrar_mapa()
 
 # GESTIONA EL MANTENIMIENTO DE LOS CLIENTES O LOS TAXIS
 # Deshabilitar los taxis o clientes no activos
@@ -374,7 +553,7 @@ def disableNoActives(activeTaxis, activeCustomers):
             print(f"DESCONEXIÓN DEL TAXI {taxi} NO ESPERADA.")
             freePositionMap(taxi)
             taxis.remove(taxi)
-            _, customer2Disconnect = manageTaxi(CLEAN) # Limpiar taxis no activos
+            _, customer2Disconnect, _ = manageTaxi(CLEAN) # Limpiar taxis no activos
             sendMessageKafka("Central2Customer", f"CLIENTE {customer2Disconnect} SERVICIO RECHAZADO.")
             mostrar_mapa()
         
@@ -399,7 +578,7 @@ def areActives():
 
         startTime = time.time()
         while True:
-            if time.time() - startTime > 9:
+            if time.time() - startTime > 6:
                 break
             
             messages = consumer.poll(1000)
@@ -438,7 +617,7 @@ def fictitiousConsumer(topic, groupID):
     startTime = time.time()
     while True:
         endTime = time.time()
-        if endTime - startTime > 1:
+        if endTime - startTime > 1.5:
             break
         
         messages = consumer.poll(10)
@@ -450,13 +629,56 @@ def fictitiousConsumer(topic, groupID):
 
 # Borrar mensajes acumulados en los topics
 def deleteNoNecessaryMessages():
-    topics = ["InfoEstadoTaxi", "TaxiMovimiento", "Customer2Central", "Status"]
-    groupIDs = ["centralGroup", "centralGroup", "customer2CentralGroup", "statusGroup"]
+    topics = ["Taxi2Central", "Customer2Central", "Status"]
+    groupIDs = ["Taxi2CentralGroup", "customer2CentralGroup", "statusGroup"]
 
     for i in range(len(topics)):
         fictitiousConsumer(topics[i], groupIDs[i])
     
     return True
+
+# TECLAS
+# Detectar dos teclas seguidas
+def detectKeys():
+    if msvcrt.kbhit():
+        firstKey = msvcrt.getch().decode(FORMAT).lower()
+
+        while True:
+            if msvcrt.kbhit():
+                secondKey = msvcrt.getch().decode(FORMAT).lower()
+                # Devolvemos las dos teclas concatenadas
+                return firstKey + secondKey
+
+# Gestionar acciones desde al Central a un Taxi
+def taxiKeys():
+    while True:
+        detectedKeys = detectKeys()
+
+        if detectedKeys is not None:
+            try:
+                idTaxi = detectedKeys[0]
+
+                if int(idTaxi) not in taxis:
+                    print(f"NO EXISTE EL TAXI {idTaxi}")
+            
+            except Exception:
+                print(f"NO EXISTE EL TAXI {idTaxi}")
+            
+            else:
+                actionTaxiKey = detectedKeys[1]
+                actionTaxi = "" # (idTaxi)p - Parar ### (idTaxi)r - Reanudar ### (idTaxi)d - Destino ### (idTaxi)b - Base
+                if actionTaxiKey == "p":
+                    actionTaxi = "PARAR"
+                elif actionTaxiKey == "r":
+                    actionTaxi = "REANUDAR"
+                elif actionTaxiKey == "d":
+                    actionTaxi = "DESTINO"
+                elif actionTaxiKey == "b":
+                    actionTaxi = "BASE"
+
+                sendMessageKafka("Central2Taxi", f"TAXI {idTaxi},CENTRAL {actionTaxi}")
+
+        time.sleep(0.25)
 
 # MAIN
 def main(port):
@@ -483,16 +705,15 @@ def main(port):
         threadAreActives = threading.Thread(target=areActives)
         threadAreActives.start()
 
-
-        threadInfoEstadoTaxi = threading.Thread(target=recibir_estado_taxi)
-        threadInfoEstadoTaxi.start()
+        threadTaxiKeys = threading.Thread(target=taxiKeys)
+        threadTaxiKeys.start()
 
         # PARA MOSTRAR MAPA
         #######################################################################
         loadLocations()
         mostrar_mapa()
 
-        threadMovimientoTaxi = threading.Thread(target=recibir_movimiento_taxi)
+        threadMovimientoTaxi = threading.Thread(target=receiveInfoTaxi)
         threadMovimientoTaxi.start()
         ########################################################################
 

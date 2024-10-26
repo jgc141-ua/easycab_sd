@@ -97,7 +97,7 @@ def requestService(ID, ubicacion, destino):
 
     completedService = False
     declinedService = False
-    while not disconnect and not declinedService:
+    while not disconnect and not declinedService and not completedService:
         messages = consumer.poll(1000)
         for _, messagesValues in messages.items():
             for msg in messagesValues:

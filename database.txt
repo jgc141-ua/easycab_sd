@@ -1,8 +1,8 @@
 1,-,NO.Parado
-2,-,OK.Parado
+2,-,NO.Parado
 3,-,NO.Parado
-4,-,NO.Parado
-5,-,NO.Parado
+4,A,KO.Servicio a
+5,D,OK.Servicio e
 6,-,NO.Parado
 7,-,NO.Parado
 8,-,NO.Parado

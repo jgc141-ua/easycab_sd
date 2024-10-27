@@ -3,46 +3,14 @@ import kafka
 import threading
 import json
 import time
+import uuid
 
 FORMAT = 'utf-8'
 KAFKA_IP = 0
 KAFKA_PORT = 0
 PRODUCER = 0
+CUSTOMER_ID = 0
 disconnect = False
-
-# Borrar mensajes acumulados en los topics
-def deleteNoNecessaryMessages(ID):
-    consumer = kafka.KafkaConsumer("Central2Customer", group_id=f"servicesCustomer_{ID}", auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
-
-    startTime = time.time()
-    while not disconnect:
-        endTime = time.time()
-        if endTime - startTime > 2:
-            break
-        
-        messages = consumer.poll(10)
-        for _, messagesValues in messages.items():
-            for msg in messagesValues:
-                x = 0
-        
-    consumer.close()
-
-    consumer = kafka.KafkaConsumer("Central2Customer", group_id=f"statusCustomer_{ID}", auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
-    startTime = time.time()
-    while not disconnect:
-        endTime = time.time()
-        if endTime - startTime > 2:
-            break
-        
-        messages = consumer.poll(10)
-        for _, messagesValues in messages.items():
-            for msg in messagesValues:
-                x = 0
-        
-    consumer.close()
-    
-    return True
-
 
 # Envía un mensaje a través de KAFKA
 def sendMessageKafka(topic, msg):
@@ -51,11 +19,11 @@ def sendMessageKafka(topic, msg):
     PRODUCER.flush()
 
 # Obtener los servicios del cliente
-def obtainServices(ID):
+def obtainServices():
     try:
         ubication = 0
         services = []
-        with open(f"Requests/EC_Requests_{ID}.json", "r", encoding="utf-8") as requests:
+        with open(f"Requests/EC_Requests_{CUSTOMER_ID}.json", "r", encoding="utf-8") as requests:
             destinos = json.load(requests)
             
             for destino in destinos["Ubication"]:
@@ -67,33 +35,36 @@ def obtainServices(ID):
         return ubication, services
     
     except Exception:
-        print(F"NO EXISTE EL ARCHIVO DE SERVICIOS: Requests/EC_Requests_{ID}.json")
+        print(F"NO EXISTE EL ARCHIVO DE SERVICIOS: Requests/EC_Requests_{CUSTOMER_ID}.json")
+
+    return -1, -1
 
 # Ejecuta todos los servicios del cliente
-def executeServices(ID):
+def executeServices():
     global disconnect
-    ubication, services = obtainServices(ID)
+    ubication, services = obtainServices()
 
-    for service in services:
-        if disconnect == True:
-            print("ERROR!! NO HAY CONEXIÓN CON LA CENTRAL.")
-            break
+    if ubication != -1 and services != -1:
+        for service in services:
+            if disconnect == True:
+                print("ERROR!! NO HAY CONEXIÓN CON LA CENTRAL.")
+                break
 
-        print(f"\nENVIANDO SIGUIENTE SERVICIO ({service})...")
-        completedService = requestService(ID, ubication, service)
-        if completedService:
-            ubication = service
+            print(f"\nENVIANDO SIGUIENTE SERVICIO ({service})...")
+            completedService = requestService(ubication, service)
+            if completedService:
+                ubication = service
 
-        time.sleep(4)
+            time.sleep(4)
 
     disconnect = True
 
 # Solicitudes de servicio y mantenimiento de la conexión con central (CUSTOMER STATUS)
-def requestService(ID, ubicacion, destino):
+def requestService(ubicacion, destino):
     global disconnect
-    sendMessageKafka("Customer2Central", f"{ID} {ubicacion} {destino}") # Un taxi primero tiene que ir a la ubicación y luego llevarlo al destino
+    sendMessageKafka("Customer2Central", f"SOLICITUD DE SERVICIO: {CUSTOMER_ID} {ubicacion} {destino}") # Un taxi primero tiene que ir a la ubicación y luego llevarlo al destino
 
-    consumer = kafka.KafkaConsumer("Central2Customer", group_id=f"servicesCustomer_{ID}", auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    consumer = kafka.KafkaConsumer("Central2Customer", group_id=str(uuid.uuid4()), auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 
     completedService = False
     declinedService = False
@@ -103,14 +74,11 @@ def requestService(ID, ubicacion, destino):
             for msg in messagesValues:
                 msg = msg.value.decode(FORMAT)
         
-                if msg == "CUSTOMER STATUS":
-                    sendMessageKafka("Status", f"CUSTOMER {ID} ACTIVO.")
-
-                elif msg.startswith("CLIENTE"):
+                if msg.startswith("CLIENTE"):
                     id2Verify = msg.split(" ")[1]
                     state = msg.split(" ")[3]
                     
-                    if id2Verify == ID:
+                    if id2Verify == CUSTOMER_ID:
                         if state == "ACEPTADO.":
                             print("SERVICIO ACEPTADO Y EN CAMINO...")
 
@@ -123,22 +91,40 @@ def requestService(ID, ubicacion, destino):
                             print("SERVICIO RECHAZADO.")
                             declinedService = True
                             break
+
+                elif msg.startswith(f"FIN {CUSTOMER_ID}"):
+                    disconnect = True
+                    break
         
     consumer.close()
     return completedService
 
+# Mostrar mapa
+def showMap():
+    global disconnect
+
+    consumer = kafka.KafkaConsumer("Mapa", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+
+    while not disconnect:
+        messages = consumer.poll(1000)
+        for _, messagesValues in messages.items():
+            for msg in messagesValues:
+                msg = msg.value.decode(FORMAT)
+                print(msg, end="")
+
 # CUSTOMER AND CENTRAL STATUS
-# Envía cada 4 segundos un mensaje a la central para comprobar su actividad
+# Envía cada 2 segundos un mensaje a la central para comprobar su actividad
 def sendCentralActive():
     while not disconnect:
         sendMessageKafka("Customer2Central", f"ACTIVE?")
+        sendMessageKafka("Status", f"CUSTOMER {CUSTOMER_ID} ACTIVO.")
         time.sleep(2)
 
-# Recibe y envía STATUS tanto del CUSTOMER como la CENTRAL
-def statusControl(ID):
+# Recibe el STATUS de la CENTRAL
+def statusControl():
     global disconnect
-    sendMessageKafka("Status", f"CUSTOMER {ID} ACTIVO.")
-    consumer = kafka.KafkaConsumer("Central2Customer", group_id=f"statusCustomer_{ID}", auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    sendMessageKafka("Status", f"CUSTOMER {CUSTOMER_ID} ACTIVO.")
+    consumer = kafka.KafkaConsumer("Central2Customer", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 
     startTime = time.time()
     while not disconnect:
@@ -159,16 +145,17 @@ def statusControl(ID):
 
 
 # MAIN
-def main(ID):
-    threadExecuteServices = threading.Thread(target=executeServices, args=(ID,))
-    threadStatusControl = threading.Thread(target=statusControl, args=(ID,))
+def main():
+    threadExecuteServices = threading.Thread(target=executeServices)
+    threadStatusControl = threading.Thread(target=statusControl)
     threadCentralActive = threading.Thread(target=sendCentralActive)
+    threadMap = threading.Thread(target=showMap)
 
-    print(f"INICIANDO CLIENTE {ID}...")
-    if deleteNoNecessaryMessages(ID):
-        threadExecuteServices.start()
-        threadStatusControl.start()
-        threadCentralActive.start()
+    print(f"INICIANDO CLIENTE {CUSTOMER_ID}...")
+    threadExecuteServices.start()
+    threadStatusControl.start()
+    threadCentralActive.start()
+    threadMap.start()
 
     return 0
 
@@ -177,8 +164,9 @@ if __name__ == "__main__":
         KAFKA_IP = sys.argv[1]
         KAFKA_PORT = int(sys.argv[2])
         PRODUCER = kafka.KafkaProducer(bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+        CUSTOMER_ID = sys.argv[3] 
 
-        main(sys.argv[3])
+        main()
 
     else:
         print("ERROR! Se necesitan estos argumentos: <IP DEL BOOTSTRAP-SERVER> <PUERTO DEL BOOTSTRAP-SERVER> <ID DEL CLIENTE>")

@@ -7,6 +7,7 @@ import sys # Para acceder a los argumentos de la línea de comandos
 import kafka
 import time
 import threading
+import uuid
 
 # Para el algoritmo A* --> librerías
 import heapq
@@ -28,10 +29,10 @@ TAM_MAPA = 20
 
 # Para el algoritmo A* --> movimientos
 MOVIMIENTOS = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
-stop = False
-beforeTaxiState = "OK"
+beforeTaxiState = ["OK", False] # Estado del taxi y si ese estado proviene del sensor
 sensorActivity = False
 customerERROR = False
+disconnect = False
 
 # Para el algoritmo A* --> heurística --> distancia euclidea
 def heuristica(pos_actual, pos_destino):
@@ -90,10 +91,10 @@ def algoritmo_a_estrella(inicio, destino):
 camino_pendiente = None  # Variable global para almacenar el camino pendiente
 
 def mover_taxi(destino, customer=None):
-    global posicion_actual, camino_pendiente, beforeTaxiState, customerERROR
+    global posicion_actual, camino_pendiente, customerERROR
 
     end = False
-    while not stop and not end and not customerERROR:  # Bucle para permitir que el taxi revise su estado continuamente
+    while not disconnect and not end and not customerERROR:  # Bucle para permitir que el taxi revise su estado continuamente
         # Si hay un camino pendiente desde una pausa anterior (estado KO), lo reutilizamos
         if camino_pendiente:
             camino = camino_pendiente
@@ -118,17 +119,18 @@ def mover_taxi(destino, customer=None):
 
 # Mover un paso el taxi
 def moveStepTaxi(camino, destino, paso_anterior, camino_pendiente, customer):
+    global beforeTaxiState
     # Mueve el taxi por cada paso en el camino
     for paso in camino:
         nueva_posX, nueva_posY = paso
 
         # Verificamos si el estado es KO
-        if beforeTaxiState == "KO":
-            print(f"[KO] Taxi {ID_TAXI} está en KO, guardando el camino pendiente.")
+        if beforeTaxiState[0] == "KO":
+            #print(f"[KO] Taxi {ID_TAXI} está en KO, guardando el camino pendiente.")
             camino_pendiente = camino[camino.index(paso):]  # Guardamos el camino restante
             break  # Salimos del bucle for, pero no del bucle while
 
-        if not stop and not customerERROR:
+        if not disconnect and not customerERROR:
             direccion = determinar_direccion(paso_anterior, (nueva_posX, nueva_posY))
 
             posicion_actual['x'] = nueva_posX
@@ -221,39 +223,53 @@ def sendMessageKafka(topic, msg):
 
 # Recibe un servicio, una comprobación o un mensaje final
 def receiveServices():
-    global beforeTaxiState, customerERROR
+    global customerERROR, disconnect
 
-    consumer = kafka.KafkaConsumer("Central2Taxi", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
-    for msg in consumer:
-        msg = msg.value.decode(FORMAT)
-        
-        if stop:
-            break
+    consumer = kafka.KafkaConsumer("Central2Taxi", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+    while not disconnect:
+        messages = consumer.poll(5000)
+        for _, messagesValues in messages.items():
+            for msg in messagesValues:
+                msg = msg.value.decode(FORMAT)
+                #print(msg)
 
-        #elif msg.startswith(f"TAXI {ID_TAXI},CENTRAL "):
-            #actionTaxi(msg.split(",")[1])
+                if msg.startswith(f"TAXI {ID_TAXI},CENTRAL "):
+                    taxiAction = msg.split(",")[1].split(" ")[1]
 
-        elif msg.startswith(f"TAXI {ID_TAXI} DESTINO"):
-            destinoCoord = msg.split(" ")[3].split(",")
-            destino = (int(destinoCoord[0]), int(destinoCoord[1]))
-            print(destino)
-            customer = msg.split(" ")[5]
+                    if taxiAction.startswith("DESTINO"):
+                        destino = taxiAction.split(" ")[1]
 
-            threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, customer))
-            threadMoverTaxi.start()
+                        threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, "central"))
+                        threadMoverTaxi.start()
 
-        elif msg == (f"TAXI {ID_TAXI} ERROR CUSTOMER"):
-            customerERROR = True
+                    elif taxiAction == "BASE":
+                        destino = (1, 1)
 
-        elif msg == "TAXI STATUS":
-            sendMessageKafka("Status", f"TAXI {ID_TAXI} ACTIVO.")
-        elif msg == f"FIN {ID_TAXI}":
-            consumer.close()
+                        threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, "base"))
+                        threadMoverTaxi.start()
 
-        elif msg == "DEATH CENTRAL":
-            consumer.close()
-            print("SE HA PERDIDO LA CONEXIÓN CON LA CENTRAL.")
-            return True
+                    elif taxiAction == "PARAR":
+                        incidenciasControl("KO")
+
+                    elif taxiAction == "REANUDAR":
+                        incidenciasControl("OK")
+
+
+                elif msg.startswith(f"TAXI {ID_TAXI} DESTINO"):
+                    destinoCoord = msg.split(" ")[3].split(",")
+                    destino = (int(destinoCoord[0]), int(destinoCoord[1]))
+                    #print(destino)
+                    customer = msg.split(" ")[5]
+
+                    threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, customer))
+                    threadMoverTaxi.start()
+
+                elif msg == (f"TAXI {ID_TAXI} ERROR CUSTOMER"):
+                    customerERROR = True
+
+                elif msg == f"FIN {ID_TAXI}":
+                    disconnect = True
+                    consumer.close()
 
 # Función encargada de enviar la incidencia a la central usando kafka
 def enviar_estado_a_central(estado, incidencia=None):
@@ -263,13 +279,42 @@ def enviar_estado_a_central(estado, incidencia=None):
         mensaje = f"TAXI {ID_TAXI} {estado}"
 
     sendMessageKafka("Taxi2Central", mensaje)
-    print(mensaje)
+    #print(mensaje)
 
     #print(f"[KAFKA] Estado enviado a la central: {mensaje}")
 
+def incidenciasControl(estado, incidencia=None, incidencia_detectada="", sensor=False):
+    global beforeTaxiState
+    modified = False
+
+    if beforeTaxiState[0] == "OK" and estado == "KO":
+        #print(f"[CUIDADO] Incidencia recibida")
+        beforeTaxiState[0] = "KO"
+        beforeTaxiState[1] = sensor
+        incidencia_detectada = incidencia
+        modified = True
+    elif beforeTaxiState[0] == "KO" and beforeTaxiState[1] == True and estado == "OK" and sensor == True:
+        #print(f"[SOLUCIONADO] Incidencia solucionada")
+        beforeTaxiState[0] = "OK"
+        beforeTaxiState[1] = True
+        modified = True
+    elif beforeTaxiState[0] == "KO" and beforeTaxiState[1] == False and estado == "OK" and sensor == False:
+        #print(f"[SOLUCIONADO] Incidencia solucionada")
+        beforeTaxiState[0] = "OK"
+        beforeTaxiState[1] = False
+        modified = True
+
+    #beforeTaxiState = estado
+
+    if modified:
+        enviar_estado_a_central(estado, incidencia)
+    #print(f"[ESTADO] Estado recibido: {estado}")
+
+    return incidencia_detectada
+
 # Función encargada de recibir el estado de los sensores
 def recibir_estado_sensor(ip_sensores, port_sensores):
-    global stop, beforeTaxiState, sensorActivity
+    global disconnect, sensorActivity
     addr_DE = (ip_sensores, int(port_sensores))
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as servidor:
@@ -279,35 +324,24 @@ def recibir_estado_sensor(ip_sensores, port_sensores):
 
         incidencia_detectada = ""
 
-        while not stop:
+        while not disconnect:
             conn, _ = servidor.accept()
             with conn:
-                while not stop:
+                while not disconnect:
                     try:
                         estado = conn.recv(HEADER).decode(FORMAT)
-
+                        
                         if "INCIDENCIA" in estado:
                             estado, incidencia = estado.split(", INCIDENCIA: ")
                         else:
                             incidencia = None
 
-                        beforeTaxiState = estado
-
-                        if beforeTaxiState == "OK" and estado == "KO":
-                            print(f"[CUIDADO] Incidencia recibida: {incidencia}")
-                            beforeTaxiState = "KO"
-                            incidencia_detectada = incidencia
-                        elif beforeTaxiState == "KO" and estado == "OK":
-                            print(f"[SOLUCIONADO] Incidencia ({incidencia_detectada}) solucionada")
-                            beforeTaxiState = "OK"
-
-                        enviar_estado_a_central(estado, incidencia)
-                        print(f"[ESTADO] Estado recibido: {estado}")
+                        incidencia_detectada = incidenciasControl(estado, incidencia, incidencia_detectada, sensor=True)
 
                     except Exception as e:
                         print("Sensor caído")
                         print("Taxi sin sensor, peligro de accidente, taxi parado")
-                        stop = True
+                        disconnect = True
 
 # Función encargada de recibir la conexión del sensor con el digital engine
 def esperar_conexion_sensor(ip_sensores, port_sensores):
@@ -323,6 +357,48 @@ def esperar_conexion_sensor(ip_sensores, port_sensores):
     except Exception as e:
         print(f"[ERROR] No se pudo establecer conexión con el sensor: {str(e)}")
         return None
+
+# Mostrar mapa
+def showMap():
+    global disconnect
+
+    consumer = kafka.KafkaConsumer("Mapa", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+
+    while not disconnect:
+        messages = consumer.poll(1000)
+        for _, messagesValues in messages.items():
+            for msg in messagesValues:
+                msg = msg.value.decode(FORMAT)
+                print(msg, end="")
+
+# Envía cada 2 segundos un mensaje a la central para comprobar su actividad
+def sendCentralActive():
+    while not disconnect:
+        sendMessageKafka("Taxi2Central", f"ACTIVE?")
+        sendMessageKafka("Status", f"TAXI {ID_TAXI} ACTIVO.")
+        time.sleep(2)
+
+# Recibe el STATUS de la CENTRAL
+def statusControl():
+    global disconnect
+    consumer = kafka.KafkaConsumer("Central2Taxi", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
+
+    startTime = time.time()
+    while not disconnect:
+        endTime = time.time()
+        if endTime - startTime > 10:
+            disconnect = True
+            break
+        
+        messages = consumer.poll(1000)
+        for _, messagesValues in messages.items():
+            for msg in messagesValues:
+                msg = msg.value.decode(FORMAT)
+
+                if msg == "CENTRAL ACTIVE":
+                    startTime = time.time()
+        
+    consumer.close()
 
 def main(ip_central, port_central, ip_sensores, port_sensores):
     # Conexión con el sensor
@@ -340,7 +416,15 @@ def main(ip_central, port_central, ip_sensores, port_sensores):
             threadServices = threading.Thread(target=receiveServices)
             threadServices.start()
 
-            mover_taxi((1, 1)) # Posición inicial
+            threadMapa = threading.Thread(target=showMap)
+            threadMapa.start()
+
+            threadActiveCentralMSG = threading.Thread(target=sendCentralActive)
+            threadActiveCentralMSG.start()
+
+            threadStatusControlCentral = threading.Thread(target=statusControl)
+            threadStatusControlCentral.start()
+
 
         else:
             print(f"Fallo de autenticación, taxi {ID_TAXI} inhabilitado, no se encuentra en la base de datos")

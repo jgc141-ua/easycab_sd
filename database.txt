@@ -1,6 +1,6 @@
-1,-,OK.Parado
-2,-,NO.Parado
-3,F,OK.Parado
+1,-,NO.Parado
+2,-,OK.Parado
+3,-,NO.Parado
 4,-,NO.Parado
 5,-,NO.Parado
 6,-,NO.Parado

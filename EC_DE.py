@@ -236,16 +236,16 @@ def receiveServices():
                 if msg.startswith(f"TAXI {ID_TAXI},CENTRAL "):
                     taxiAction = msg.split(",")[1].split(" ")[1]
 
-                    if taxiAction.startswith("DESTINO"):
-                        destino = taxiAction.split(" ")[1]
+                    if taxiAction.startswith("DESTINO") or taxiAction == "BASE":
+                        if taxiAction.startswith("DESTINO"):
+                            destino = taxiAction.split(" ")[1]
+                            customerCentral = "central"
 
-                        threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, "central"))
-                        threadMoverTaxi.start()
+                        else:
+                            destino = (1, 1)
+                            customerCentral = "base"
 
-                    elif taxiAction == "BASE":
-                        destino = (1, 1)
-
-                        threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, "base"))
+                        threadMoverTaxi = threading.Thread(target=mover_taxi, args=(destino, customerCentral))
                         threadMoverTaxi.start()
 
                     elif taxiAction == "PARAR":
@@ -372,14 +372,13 @@ def showMap():
                 print(msg, end="")
 
 # Envía cada 2 segundos un mensaje a la central para comprobar su actividad
-def sendCentralActive():
+def taxiStatus():
     while not disconnect:
-        sendMessageKafka("Taxi2Central", f"ACTIVE?")
         sendMessageKafka("Status", f"TAXI {ID_TAXI} ACTIVO.")
-        time.sleep(2)
+        time.sleep(1)
 
 # Recibe el STATUS de la CENTRAL
-def statusControl():
+def centralStatus():
     global disconnect
     consumer = kafka.KafkaConsumer("Central2Taxi", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 
@@ -411,19 +410,14 @@ def main(ip_central, port_central, ip_sensores, port_sensores):
 
         if conexion_verificada:
             threadRecibeEstados = threading.Thread(target=recibir_estado_sensor, args=(ip_sensores, port_sensores))
-            threadRecibeEstados.start()
-
             threadServices = threading.Thread(target=receiveServices)
-            threadServices.start()
-
             threadMapa = threading.Thread(target=showMap)
-            threadMapa.start()
+            threadTaxiStatus = threading.Thread(target=taxiStatus)
+            threadCentralStatus = threading.Thread(target=centralStatus)
+            threads = [threadRecibeEstados, threadServices, threadMapa, threadTaxiStatus, threadCentralStatus]
 
-            threadActiveCentralMSG = threading.Thread(target=sendCentralActive)
-            threadActiveCentralMSG.start()
-
-            threadStatusControlCentral = threading.Thread(target=statusControl)
-            threadStatusControlCentral.start()
+            for thread in threads:
+                thread.start()
 
 
         else:

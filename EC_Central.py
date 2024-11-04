@@ -470,10 +470,7 @@ def receiveInfoTaxi():
     for msg in consumer:
         msg = msg.value.decode(FORMAT)
         
-        if msg == "ACTIVE?":
-            sendMessageKafka("Central2Taxi", "CENTRAL ACTIVE")
-        
-        elif msg.split(" ")[2] == "MOVIMIENTO":
+        if msg.split(" ")[2] == "MOVIMIENTO":
             actualizar_mapa_con_movimiento(msg)
 
         elif msg.split(" ")[2] == "DESTINO":
@@ -575,9 +572,7 @@ def requestCustomers():
     for msg in consumer:
         msg = msg.value.decode(FORMAT)
 
-        if msg == "ACTIVE?":
-            sendMessageKafka("Central2Customer", "CENTRAL ACTIVE")
-        elif msg.startswith("SOLICITUD DE SERVICIO:"):
+        if msg.startswith("SOLICITUD DE SERVICIO:"):
             #print(f"Holaaaaaaaaaa: {msg}")
             id = msg.split(" ")[3]
             ubicacion = msg.split(" ")[4]
@@ -608,9 +603,18 @@ def requestCustomers():
             mostrar_mapa()
 
 # GESTIONA EL MANTENIMIENTO DE LOS CLIENTES O LOS TAXIS
+def centralActive():
+    while True:
+        sendMessageKafka("Central2Customer", "CENTRAL ACTIVE")
+        sendMessageKafka("Central2Taxi", "CENTRAL ACTIVE")
+        time.sleep(1)
+
 # Deshabilitar los taxis o clientes no activos
 def disableNoActives(activeTaxis, activeCustomers):
-    for taxi in taxis:
+    actualTaxis = taxis
+    actualCustomers = customers
+
+    for taxi in actualTaxis:
         if taxi not in activeTaxis:
             sendMessageKafka("Central2Taxi", f"FIN {taxi}")
             print(f"DESCONEXIÓN DEL TAXI {taxi} NO ESPERADA.")
@@ -620,7 +624,7 @@ def disableNoActives(activeTaxis, activeCustomers):
             sendMessageKafka("Central2Customer", f"CLIENTE {customer2Disconnect} SERVICIO RECHAZADO.")
             mostrar_mapa()
         
-    for customer in customers:
+    for customer in actualCustomers:
         if customer[0] not in activeCustomers:
             sendMessageKafka("Central2Customer", f"FIN {customer[0]}")
             print(f"DESCONEXIÓN DEL CLIENTE {customer[0]} NO ESPERADA.")
@@ -736,35 +740,29 @@ def taxiKeys():
 # MAIN
 def main(port):
     print("INICIANDO CENTRAL...")
-    server = socket.gethostbyname(SOCKET_IP)
 
+    # Sockets
+    server = socket.gethostbyname(SOCKET_IP)
     addr = (server, int(port))
-    
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(addr)
 
+    # Gestión de taxis e hilos
     manageTaxi(CLEAN)
+    loadLocations()
 
     threadSockets = threading.Thread(target=connectionSocket, args=(server,))
-    threadSockets.start()
-
     threadResquests = threading.Thread(target=requestCustomers)
-    threadResquests.start()
-
     threadAreActives = threading.Thread(target=areActives)
-    threadAreActives.start()
-
+    threadCentralActive = threading.Thread(target=centralActive)
     threadTaxiKeys = threading.Thread(target=taxiKeys)
-    threadTaxiKeys.start()
-
-    # PARA MOSTRAR MAPA
-    #######################################################################
-    loadLocations()
-    mostrar_mapa()
-
     threadMovimientoTaxi = threading.Thread(target=receiveInfoTaxi)
-    threadMovimientoTaxi.start()
-    ########################################################################
+    threads = [threadSockets, threadResquests, threadAreActives, threadTaxiKeys, threadMovimientoTaxi, threadCentralActive]
+
+    for thread in threads:
+        thread.start()
+
+    mostrar_mapa()
 
     return 0
 

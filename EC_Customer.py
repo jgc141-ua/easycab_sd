@@ -113,17 +113,15 @@ def showMap():
                 print(msg, end="")
 
 # CUSTOMER AND CENTRAL STATUS
-# Envía cada 2 segundos un mensaje a la central para comprobar su actividad
-def sendCentralActive():
+# Envía cada 2 segundos un mensaje a la central para mantener el cliente activo
+def customerStatus():
     while not disconnect:
-        sendMessageKafka("Customer2Central", f"ACTIVE?")
         sendMessageKafka("Status", f"CUSTOMER {CUSTOMER_ID} ACTIVO.")
-        time.sleep(2)
+        time.sleep(1)
 
 # Recibe el STATUS de la CENTRAL
-def statusControl():
+def centralStatus():
     global disconnect
-    sendMessageKafka("Status", f"CUSTOMER {CUSTOMER_ID} ACTIVO.")
     consumer = kafka.KafkaConsumer("Central2Customer", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 
     startTime = time.time()
@@ -147,15 +145,14 @@ def statusControl():
 # MAIN
 def main():
     threadExecuteServices = threading.Thread(target=executeServices)
-    threadStatusControl = threading.Thread(target=statusControl)
-    threadCentralActive = threading.Thread(target=sendCentralActive)
+    threadCentralStatus = threading.Thread(target=centralStatus)
+    threadCustomerStatus = threading.Thread(target=customerStatus)
     threadMap = threading.Thread(target=showMap)
+    threads = [threadExecuteServices, threadCentralStatus, threadCustomerStatus, threadMap]
 
     print(f"INICIANDO CLIENTE {CUSTOMER_ID}...")
-    threadExecuteServices.start()
-    threadStatusControl.start()
-    threadCentralActive.start()
-    threadMap.start()
+    for thread in threads:
+        thread.start()
 
     return 0
 

@@ -1,10 +1,1 @@
-1,-,NO.Parado
-2,-,NO.Parado
-3,-,NO.Parado
-4,-,NO.Parado
-5,-,OK.Parado
-6,-,NO.Parado
-7,-,NO.Parado
-8,-,NO.Parado
-9,-,NO.Parado
-10,-,NO.Parado
+2,-,OK.Parado

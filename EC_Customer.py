@@ -1,3 +1,4 @@
+#region LIBRARIES
 import sys
 import kafka
 import threading
@@ -5,6 +6,7 @@ import json
 import time
 import uuid
 
+#region CONSTANTS & VARIABLES
 FORMAT = 'utf-8'
 KAFKA_IP = 0
 KAFKA_PORT = 0
@@ -12,12 +14,14 @@ PRODUCER = 0
 CUSTOMER_ID = 0
 disconnect = False
 
+#region KAFKA
 # Envía un mensaje a través de KAFKA
 def sendMessageKafka(topic, msg):
     time.sleep(0.5)
     PRODUCER.send(topic, msg.encode(FORMAT))
     PRODUCER.flush()
 
+#region CUSTOMER SERVICES
 # Obtener los servicios del cliente
 def obtainServices():
     try:
@@ -99,6 +103,7 @@ def requestService(ubicacion, destino):
     consumer.close()
     return completedService
 
+#region MAP
 # Mostrar mapa
 def showMap():
     global disconnect
@@ -112,7 +117,7 @@ def showMap():
                 msg = msg.value.decode(FORMAT)
                 print(msg, end="")
 
-# CUSTOMER AND CENTRAL STATUS
+#region STATUS
 # Envía cada 2 segundos un mensaje a la central para mantener el cliente activo
 def customerStatus():
     while not disconnect:
@@ -142,7 +147,7 @@ def centralStatus():
     consumer.close()
 
 
-# MAIN
+#region MAIN
 def main():
     threadExecuteServices = threading.Thread(target=executeServices)
     threadCentralStatus = threading.Thread(target=centralStatus)

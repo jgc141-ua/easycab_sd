@@ -9,6 +9,7 @@ from colorama import *
 import json
 import msvcrt
 import uuid
+import datetime
 
 import kafka.errors
 
@@ -253,6 +254,22 @@ def sendMessageKafka(topic, msg):
     time.sleep(0.25)
     PRODUCER.send(topic, msg.encode(FORMAT))
     PRODUCER.flush()
+
+#region AUDIT LOGS
+# Escribir en el archivo de logs de auditoria
+def writeInAuditLog(action, description, IP=None):
+    if IP is None:
+        IP = socket.gethostbyname(socket.gethostname())
+    
+    # Obtener fecha actual y escribir el string del log
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logStr = f"[{timestamp}] IP={IP} ACTION={action} DESCRIPTION={description}\n"
+    
+    try:
+        with open("audit.log", "a") as logFile:
+            logFile.write(logStr)
+    except Exception as e:
+        print(f"ERROR AL ESCRIBIR EN EL ARCHIVO DE LOGS: {e}")
 
 #region LOCATIONS CONTROL
 # Obtener una localización según las coordenadas
@@ -569,11 +586,15 @@ def authTaxi(conn):
         msgTaxi = conn.recv(HEADER).decode(FORMAT)
         idTaxi = int(msgTaxi.split("#")[1])
 
+        writeInAuditLog("AUTH_ATTEMPT", f"EL TAXI {idTaxi} ESTA INTENTANDO AUTENTICARSE", SOCKET_IP)
         msg2Send = f"VERIFICANDO SOLICITUD DEL TAXI {idTaxi}...\nVERIFICACIÓN NO SUPERADA."
-        if searchTaxiID(idTaxi):
+        if searchTaxiID(idTaxi):    
             msg2Send = f"VERIFICANDO SOLICITUD DEL TAXI {idTaxi}...\nVERIFICACIÓN SUPERADA."
+            writeInAuditLog("AUTH_SUCCESSFUL", f"EL TAXI {idTaxi} SE HA AUTENTICADO CORRECTAMENTE", SOCKET_IP)
             if idTaxi not in mapa[0][0]:
                 mapa[0][0].insert(0, idTaxi)
+        else:
+            writeInAuditLog("AUTH_REJECTED", f"EL TAXI {idTaxi} SE HA RECHAZADO LA AUTENTICACION", SOCKET_IP)
 
         print(msg2Send)
         conn.send(msg2Send.encode(FORMAT))
@@ -588,6 +609,7 @@ def authTaxi(conn):
         text = "ID DEL TAXI NO ENCONTRADA EN LA BASE DE DATOS\nVERIFICACIÓN NO SUPERADA."
         print(text)
         conn.send(text.encode(FORMAT))
+        writeInAuditLog("AUTH_REJECTED", f"EL TAXI {idTaxi} SE HA RECHAZADO LA AUTENTICACION", SOCKET_IP)
 
     finally:
         conn.close()
@@ -617,6 +639,7 @@ def disableNoActives(activeTaxis, activeCustomers):
 
     for taxi in actualTaxis:
         if taxi not in activeTaxis:
+            writeInAuditLog("TAXI_DISCONNECTED", f"EL TAXI {taxi} SE HA DESCONECTADO.")
             sendMessageKafka("Central2Taxi", f"FIN {taxi}")
             print(f"DESCONEXIÓN DEL TAXI {taxi} NO ESPERADA.")
             freePositionMap(taxi)
@@ -627,6 +650,7 @@ def disableNoActives(activeTaxis, activeCustomers):
         
     for customer in actualCustomers:
         if customer[0] not in activeCustomers:
+            writeInAuditLog("CUSTOMER_DISCONNECTED", f"EL CLIENTE {customer[0]} SE HA DESCONECTADO.")
             sendMessageKafka("Central2Customer", f"FIN {customer[0]}")
             print(f"DESCONEXIÓN DEL CLIENTE {customer[0]} NO ESPERADA.")
             manageTaxi(DISCONNECT, customer[0]) # Desconectar cliente de taxi

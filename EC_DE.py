@@ -181,7 +181,7 @@ def registerTaxi():
     return False
 
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets con SSL
-def centralConn(centralIP, centralPort):
+def centralConnSSL(centralIP, centralPort):
     if not registerTaxi():
         return None
 
@@ -212,6 +212,31 @@ def centralConn(centralIP, centralPort):
     except Exception as e:
         print(f"Error generado: {str(e)}")
 
+    return None
+
+# Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
+def centralConn(centralIP, centralPort):
+    if not(registerTaxi()):
+        return None
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as createdSocket:
+            createdSocket.connect((centralIP, int(centralPort)))
+            authMessage = f"AUTENTICAR TAXI #{TAXI_ID}"
+            createdSocket.send(authMessage.encode(FORMAT))
+            respuesta = createdSocket.recv(HEADER).decode(FORMAT)
+            print(f"{respuesta}")
+
+            if respuesta.split("\n")[1] == "VERIFICACIÓN SUPERADA.":
+                sendMessageKafka("Status", f"TAXI {TAXI_ID} ACTIVO.")
+                return createdSocket
+
+    except ConnectionError:
+        print(f"Error de conexión con la central en {centralIP}:{centralPort}")
+
+    except Exception as e:
+        print(f"Error generado: {str(e)}")
+        
     return None
 
 #region CUSTOMER SERVICES

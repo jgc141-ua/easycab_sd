@@ -393,7 +393,6 @@ def manageTaxiCONNECT2TAXI(line, option, id, idTaxi, destinationTaxi, active, de
                 modifiedTaxiID = id
                 line = line.replace("-", destination)
                 line = line.replace("Parado", f"Servicio {idCustomer}")
-                writeInAuditLog("TAXI_CUSTOMER_SERVICE", f"AL TAXI {idTaxi} SE LE HA ASIGNADO UN SERVICIO DE UN CLIENTE", SOCKET_IP)
                 break
 
     elif CONNECT2TAXI_ID == option and idTaxi == id and destinationTaxi == "-" and active == "OK":
@@ -619,21 +618,21 @@ def authTaxi(conn):
         conn.close()
 
 # Abre un socket para aceptar peticiones de autenticación con SSL/TLS
-def connectionSocketSSL(server):
+def connectionSocketSSL():
     # Crear contexto SSL para el servidor
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile="central.crt", keyfile="central.key")
     context.load_verify_locations("ca.pem")
 
     # Crear el socket del servidor
-    #server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #server.bind(("127.0.0.1", 5050))
-    server.listen(5)
-    #print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("127.0.0.1", 5050))
+    server_socket.listen(5)
+    print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
 
     while True:
         # Aceptar conexiones entrantes
-        client_socket, addr = server.accept()
+        client_socket, addr = server_socket.accept()
 
         # Envolver el socket con SSL
         ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
@@ -643,29 +642,14 @@ def connectionSocketSSL(server):
         threadAuthTaxi = threading.Thread(target=authTaxi, args=(ssl_client_socket,))
         threadAuthTaxi.start()
 
-# Abre un socket para aceptar peticiones de autenticación con SSL/TLS
+# Abre un socket para aceptar peticiones de autenticación
 def connectionSocket(server):
-    # Crear contexto SSL para el servidor
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(certfile="central.crt", keyfile="central.key")
-    context.load_verify_locations("ca.pem")
-
-    # Crear el socket del servidor
-    #server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #server.bind(("127.0.0.1", 5050))
-    server.listen(5)
-    #print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
-
+    server.listen()
+    print(f"CENTRAL A LA ESCUCHA EN {server}")
     while True:
-        # Aceptar conexiones entrantes
-        client_socket, addr = server.accept()
-
-        # Envolver el socket con SSL
-        #ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
-        print(f"CONEXIÓN SSL ESTABLECIDA CON {addr}")
-
-        # Crear un hilo para manejar la autenticación del taxi
-        threadAuthTaxi = threading.Thread(target=authTaxi, args=(addr,))
+        conn, addr = server.accept()
+        
+        threadAuthTaxi = threading.Thread(target=authTaxi, args=(conn,))
         threadAuthTaxi.start()
 
 #region ACTIVITY CONTROL

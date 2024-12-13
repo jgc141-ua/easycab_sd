@@ -393,6 +393,7 @@ def manageTaxiCONNECT2TAXI(line, option, id, idTaxi, destinationTaxi, active, de
                 modifiedTaxiID = id
                 line = line.replace("-", destination)
                 line = line.replace("Parado", f"Servicio {idCustomer}")
+                writeInAuditLog("TAXI_CUSTOMER_SERVICE", f"AL TAXI {idTaxi} SE LE HA ASIGNADO UN SERVICIO DE UN CLIENTE", SOCKET_IP)
                 break
 
     elif CONNECT2TAXI_ID == option and idTaxi == id and destinationTaxi == "-" and active == "OK":
@@ -401,6 +402,7 @@ def manageTaxiCONNECT2TAXI(line, option, id, idTaxi, destinationTaxi, active, de
             modifiedTaxiID = id
             line = line.replace("-", destination)
             line = line.replace("Parado", f"Servicio {idCustomer}")
+            writeInAuditLog("TAXI_CENTRAL_SERVICE", f"AL TAXI {idTaxi} SE LE HA ASIGNADO UN SERVICIO DE LA CENTRAL", SOCKET_IP)
 
     return line, modified, modifiedTaxiID
 
@@ -415,6 +417,7 @@ def manageTaxiDISCONNECT(line, option, id, service, idCustomer, destinationTaxi,
             sendMessageKafka("Central2Taxi", f"TAXI {id} ERROR CUSTOMER")
         elif DISCONNECT_COMPLETED == option:
             sendMessageKafka("Central2Customer", f"CLIENTE {idCustomer} SERVICIO COMPLETADO.")
+            writeInAuditLog("TAXI_CUSTOMER_SERVICE_COMPLETED", f"EL TAXI {id} HA COMPLETADO EL SERVICIO DEL CLIENTE {idCustomer}", SOCKET_IP)
 
     return line
 
@@ -423,6 +426,7 @@ def manageTaxiCHANGE_DESTINATION(line, id, idTaxi, destinationTaxi, destination)
     if id == idTaxi:
         #print(idTaxi)
         line = line.replace(destinationTaxi, destination)
+        writeInAuditLog("TAXI_CUSTOMER_PICKUP", f"EL TAXI {idTaxi} HA RECOGIDO AL CLIENTE ASIGNADO", SOCKET_IP)
 
     return line
 
@@ -615,21 +619,21 @@ def authTaxi(conn):
         conn.close()
 
 # Abre un socket para aceptar peticiones de autenticación con SSL/TLS
-def connectionSocket():
+def connectionSocketSSL(server):
     # Crear contexto SSL para el servidor
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile="central.crt", keyfile="central.key")
     context.load_verify_locations("ca.pem")
 
     # Crear el socket del servidor
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("127.0.0.1", 5050))
-    server_socket.listen(5)
-    print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
+    #server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #server.bind(("127.0.0.1", 5050))
+    server.listen(5)
+    #print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
 
     while True:
         # Aceptar conexiones entrantes
-        client_socket, addr = server_socket.accept()
+        client_socket, addr = server.accept()
 
         # Envolver el socket con SSL
         ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
@@ -637,6 +641,31 @@ def connectionSocket():
 
         # Crear un hilo para manejar la autenticación del taxi
         threadAuthTaxi = threading.Thread(target=authTaxi, args=(ssl_client_socket,))
+        threadAuthTaxi.start()
+
+# Abre un socket para aceptar peticiones de autenticación con SSL/TLS
+def connectionSocket(server):
+    # Crear contexto SSL para el servidor
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile="central.crt", keyfile="central.key")
+    context.load_verify_locations("ca.pem")
+
+    # Crear el socket del servidor
+    #server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #server.bind(("127.0.0.1", 5050))
+    server.listen(5)
+    #print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
+
+    while True:
+        # Aceptar conexiones entrantes
+        client_socket, addr = server.accept()
+
+        # Envolver el socket con SSL
+        #ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
+        print(f"CONEXIÓN SSL ESTABLECIDA CON {addr}")
+
+        # Crear un hilo para manejar la autenticación del taxi
+        threadAuthTaxi = threading.Thread(target=authTaxi, args=(addr,))
         threadAuthTaxi.start()
 
 #region ACTIVITY CONTROL

@@ -1,3 +1,4 @@
+#region LIBRARIES
 import sys
 import socket
 import threading
@@ -11,6 +12,7 @@ import uuid
 
 import kafka.errors
 
+#region CONSTANTS
 HEADER = 64
 FORMAT = 'utf-8'
 END_CONNECTION1 = "FIN"
@@ -20,12 +22,12 @@ KAFKA_PORT = 0
 PRODUCER = 0
 SOCKET_IP = 0
 
+# Constantes del mapa
 CHAR_MAP = "."
 SPACE = " "
 LINE = f"{'-' * 64}\n"
 
-# PARA MOSTRAR MAPA
-#######################################
+#region MAP
 mapa = [[["."] for _ in range(20)] for _ in range(20)]
 taxis = []
 customers = []
@@ -111,10 +113,6 @@ def mostrar_mapa():
 
     time.sleep(0.25)
     sendMessageKafka("Mapa", fullMapa2Print)
-    #for line2Print in mapa2Print:
-     #   print(line2Print, end="")
-      #  sendMessageKafka("Mapa", line2Print)
-###############################################################################################################
 
 # Mostrar taxis, localizaciones, clientes y movimientos en el mapa
 def showMapObjects(mapa2Print):
@@ -161,58 +159,6 @@ def showMapObjects(mapa2Print):
                     mapa2Print.append(f" {mapValue} ")
 
         mapa2Print.append("\n")  
-
-# Obtener una localización según las coordenadas
-def getLocationByCoords(x, y):
-    for location in locations:
-        if location[1] == x and location[2] == y:
-            return location
-
-    return None
-
-# Obtener una localización según la ID de una localización
-def getLocation(customerLocation):
-    for location in locations:
-        if location[0] == customerLocation:
-            return (location[1], location[2])
-        
-    return None
-
-# Localizaciones de EC_locations.json
-def loadLocations():
-    global mapa
-
-    try:
-        with open("EC_locations.json", "r", encoding="utf-8") as locats:
-            x = json.load(locats)
-            
-            for location in x["locations"]:
-                locationID = location["Id"]
-                locationPos = location["POS"]
-                locationPosX = int(locationPos.split(",")[0])
-                locationPosY = int(locationPos.split(",")[1])
-
-                locations.append((locationID, locationPosX, locationPosY))
-
-                mapa[locationPosX-1][locationPosY-1].pop(0)
-                mapa[locationPosX-1][locationPosY-1].insert(0, locationID)
-    
-    except Exception:
-        print(F"NO EXISTE EL ARCHIVO (EC_locations.json)")
-
-# Poner a un consumidor en una localización
-def putCustomerLocation(customerID, locationID):
-    for location in locations:
-        if location[0] == locationID:
-            locationPosX = location[1]
-            locationPosY = location[2]
-
-            if customerID not in mapa[locationPosX-1][locationPosY-1]:
-                mapa[locationPosX-1][locationPosY-1].insert(0, customerID)
-
-            return True
-        
-    return False
 
 def freePositionMap(id):
     for row in range(len(mapa)):
@@ -300,6 +246,68 @@ def actualizar_mapa_con_movimiento(mensaje):
     # Muestra el mapa actualizado
     mostrar_mapa()
 
+#region KAFKA
+# ENVIAR UN MENSAJE A TRAVÉS DE KAFKA
+# Crear un productor y enviar un mensaje a través de Kafka con un topic y su mensaje
+def sendMessageKafka(topic, msg):
+    time.sleep(0.25)
+    PRODUCER.send(topic, msg.encode(FORMAT))
+    PRODUCER.flush()
+
+#region LOCATIONS CONTROL
+# Obtener una localización según las coordenadas
+def getLocationByCoords(x, y):
+    for location in locations:
+        if location[1] == x and location[2] == y:
+            return location
+
+    return None
+
+# Obtener una localización según la ID de una localización
+def getLocation(customerLocation):
+    for location in locations:
+        if location[0] == customerLocation:
+            return (location[1], location[2])
+        
+    return None
+
+# Localizaciones de EC_locations.json
+def loadLocations():
+    global mapa
+
+    try:
+        with open("EC_locations.json", "r", encoding="utf-8") as locats:
+            x = json.load(locats)
+            
+            for location in x["locations"]:
+                locationID = location["Id"]
+                locationPos = location["POS"]
+                locationPosX = int(locationPos.split(",")[0])
+                locationPosY = int(locationPos.split(",")[1])
+
+                locations.append((locationID, locationPosX, locationPosY))
+
+                mapa[locationPosX-1][locationPosY-1].pop(0)
+                mapa[locationPosX-1][locationPosY-1].insert(0, locationID)
+    
+    except Exception:
+        print(F"NO EXISTE EL ARCHIVO (EC_locations.json)")
+
+#region CUSTOMERS CONTROL
+# Poner a un consumidor en una localización
+def putCustomerLocation(customerID, locationID):
+    for location in locations:
+        if location[0] == locationID:
+            locationPosX = location[1]
+            locationPosY = location[2]
+
+            if customerID not in mapa[locationPosX-1][locationPosY-1]:
+                mapa[locationPosX-1][locationPosY-1].insert(0, customerID)
+
+            return True
+        
+    return False
+
 # Buscar un CUSTOMER según su ID
 def searchCustomerID(idCustomer):
     for customer in customers:
@@ -308,6 +316,43 @@ def searchCustomerID(idCustomer):
         
     return -1
 
+# Leer todas las solicitudes de los clientes
+def requestCustomers():
+    consumer = kafka.KafkaConsumer("Customer2Central", group_id=str(uuid.uuid4()), bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
+    for msg in consumer:
+        msg = msg.value.decode(FORMAT)
+
+        if msg.startswith("SOLICITUD DE SERVICIO:"):
+            #print(f"Holaaaaaaaaaa: {msg}")
+            id = msg.split(" ")[3]
+            ubicacion = msg.split(" ")[4]
+            destino = msg.split(" ")[5]
+
+            for customer in customers:
+                if customer[0] == id:
+                    customers.remove(customer)
+                    freePositionMap(customer[0])
+
+            isConnected, _, idTaxi = manageTaxi(CONNECT2TAXI, id, ubicacion)
+            if isConnected:
+                customers.append((id, ubicacion, destino, f"OK. Taxi {idTaxi}"))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO ACEPTADO.")
+                
+                locationTuple = getLocation(ubicacion)
+                x = locationTuple[0]
+                y = locationTuple[1]
+                #print(locationTuple)
+                sendMessageKafka("Central2Taxi", f"TAXI {idTaxi} DESTINO {x},{y} CLIENTE {id}")
+            
+            elif not isConnected:
+                customers.append((id, ubicacion, destino, "KO. Servicio denegado."))
+                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO RECHAZADO.")
+                freePositionMap(id)
+
+            putCustomerLocation(id, ubicacion)
+            mostrar_mapa()
+
+#region TAXI CONTROL
 # Gestionar los taxis
 CLEAN = 1 # Deshabilitar los no activos (y desconecta el cliente que podría tener asociado)
 def manageTaxiCLEAN(line, id, service, destinationTaxi, status):
@@ -428,14 +473,14 @@ def getTaxi(option, idTaxi = 0):
             status = line.split(",")[2] # OK.Parado (ejemplo)
             active = status.split(".")[0] # OK (ejemplo)
             
-            if option == 1 and (id == idTaxi):
+            if option == ONE and (id == idTaxi):
                 destinationTaxi = line.split(",")[1] # - (ejemplo)
                 status = line.split(",")[2] # OK.Parado (ejemplo)
                 active = status.split(".")[0] # OK (ejemplo)
                 service = status.split(".")[1].split("\n")[0] # Parado (ejemplo)
                 return (id, destinationTaxi, active, service)
             
-            if option == 2 and (active == "OK" or active == "KO"):
+            if option == ALL and (active == "OK" or active == "KO"):
                 activeTaxis.append((id, active))
 
     return activeTaxis
@@ -448,7 +493,6 @@ def searchTaxiID(idTaxi):
 
         for line in file:
             id = int(line.split(",")[0])
-
             if idTaxi == id and idTaxi not in taxis: # Si se encuentra esa ID en la base de datos y no es un taxi activo ya
                 exists = True
                 taxis.append(idTaxi)
@@ -558,50 +602,7 @@ def connectionSocket(server):
         threadAuthTaxi = threading.Thread(target=authTaxi, args=(conn,))
         threadAuthTaxi.start()
 
-# ENVIAR UN MENSAJE A TRAVÉS DE KAFKA
-# Crear un productor y enviar un mensaje a través de Kafka con un topic y su mensaje
-def sendMessageKafka(topic, msg):
-    time.sleep(0.25)
-    PRODUCER.send(topic, msg.encode(FORMAT))
-    PRODUCER.flush()
-
-# CUSTOMERS
-# Leer todas las solicitudes de los clientes
-def requestCustomers():
-    consumer = kafka.KafkaConsumer("Customer2Central", group_id=str(uuid.uuid4()), bootstrap_servers=[f"{KAFKA_IP}:{KAFKA_PORT}"])
-    for msg in consumer:
-        msg = msg.value.decode(FORMAT)
-
-        if msg.startswith("SOLICITUD DE SERVICIO:"):
-            #print(f"Holaaaaaaaaaa: {msg}")
-            id = msg.split(" ")[3]
-            ubicacion = msg.split(" ")[4]
-            destino = msg.split(" ")[5]
-
-            for customer in customers:
-                if customer[0] == id:
-                    customers.remove(customer)
-                    freePositionMap(customer[0])
-
-            isConnected, _, idTaxi = manageTaxi(CONNECT2TAXI, id, ubicacion)
-            if isConnected:
-                customers.append((id, ubicacion, destino, f"OK. Taxi {idTaxi}"))
-                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO ACEPTADO.")
-                
-                locationTuple = getLocation(ubicacion)
-                x = locationTuple[0]
-                y = locationTuple[1]
-                #print(locationTuple)
-                sendMessageKafka("Central2Taxi", f"TAXI {idTaxi} DESTINO {x},{y} CLIENTE {id}")
-            
-            elif not isConnected:
-                customers.append((id, ubicacion, destino, "KO. Servicio denegado."))
-                sendMessageKafka("Central2Customer", f"CLIENTE {id} SERVICIO RECHAZADO.")
-                freePositionMap(id)
-
-            putCustomerLocation(id, ubicacion)
-            mostrar_mapa()
-
+#region ACTIVITY CONTROL
 # GESTIONA EL MANTENIMIENTO DE LOS CLIENTES O LOS TAXIS
 def centralActive():
     while True:
@@ -666,7 +667,7 @@ def areActives():
         consumer.close()
         time.sleep(1)
 
-# TECLAS
+#region KEYS
 # Detectar dos teclas o 3 teclas seguidas
 def detectKeys():
     if msvcrt.kbhit():
@@ -737,7 +738,7 @@ def taxiKeys():
 
         time.sleep(0.25)
 
-# MAIN
+#region MAIN
 def main(port):
     print("INICIANDO CENTRAL...")
 
@@ -748,7 +749,7 @@ def main(port):
     server.bind(addr)
 
     # Gestión de taxis e hilos
-    manageTaxi(CLEAN)
+    # manageTaxi(CLEAN)
     loadLocations()
 
     threadSockets = threading.Thread(target=connectionSocket, args=(server,))

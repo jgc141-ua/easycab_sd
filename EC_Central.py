@@ -9,6 +9,7 @@ from colorama import *
 import json
 import msvcrt
 import uuid
+import ssl # PARA CIFRADO
 
 import kafka.errors
 
@@ -592,14 +593,29 @@ def authTaxi(conn):
     finally:
         conn.close()
 
-# Abre un socket para aceptar peticiones de autenticación
-def connectionSocket(server):
-    server.listen()
-    print(f"CENTRAL A LA ESCUCHA EN {server}")
+# Abre un socket para aceptar peticiones de autenticación con SSL/TLS
+def connectionSocket():
+    # Crear contexto SSL para el servidor
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile="central.crt", keyfile="central.key")
+    context.load_verify_locations("ca.pem")
+
+    # Crear el socket del servidor
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(("127.0.0.1", 5050))
+    server_socket.listen(5)
+    print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
+
     while True:
-        conn, addr = server.accept()
-        
-        threadAuthTaxi = threading.Thread(target=authTaxi, args=(conn,))
+        # Aceptar conexiones entrantes
+        client_socket, addr = server_socket.accept()
+
+        # Envolver el socket con SSL
+        ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
+        print(f"CONEXIÓN SSL ESTABLECIDA CON {addr}")
+
+        # Crear un hilo para manejar la autenticación del taxi
+        threadAuthTaxi = threading.Thread(target=authTaxi, args=(ssl_client_socket,))
         threadAuthTaxi.start()
 
 #region ACTIVITY CONTROL

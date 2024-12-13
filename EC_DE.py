@@ -1,4 +1,3 @@
-
 #region LIBRARIES
 import socket
 import sys
@@ -9,7 +8,7 @@ import uuid
 import requests
 import heapq
 import math
-
+import ssl # PARA CIFRADO
 
 #region CONSTANTS
 HEADER = 64
@@ -181,30 +180,38 @@ def registerTaxi():
 
     return False
 
-# Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
+# Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets con SSL
 def centralConn(centralIP, centralPort):
-    if not(registerTaxi()):
+    if not registerTaxi():
         return None
 
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as createdSocket:
-            createdSocket.connect((centralIP, int(centralPort)))
-            authMessage = f"AUTENTICAR TAXI #{TAXI_ID}"
-            createdSocket.send(authMessage.encode(FORMAT))
+        # Crear contexto SSL para el cliente
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        context.load_verify_locations("ca.pem")  # Verificar con la CA
+        context.load_cert_chain(certfile="taxi.crt", keyfile="taxi.key")  # Certificado y clave del taxi
 
-            respuesta = createdSocket.recv(HEADER).decode(FORMAT)
-            print(f"{respuesta}")
+        # Crear conexión SSL
+        with socket.create_connection((centralIP, int(centralPort))) as createdSocket:
+            with context.wrap_socket(createdSocket, server_hostname=centralIP) as ssl_sock:
+                # Enviar mensaje de autenticación
+                authMessage = f"AUTENTICAR TAXI #{TAXI_ID}"
+                ssl_sock.send(authMessage.encode(FORMAT))
 
-            if respuesta.split("\n")[1] == "VERIFICACIÓN SUPERADA.":
-                sendMessageKafka("Status", f"TAXI {TAXI_ID} ACTIVO.")
-                return createdSocket
-        
+                # Recibir respuesta de la central
+                respuesta = ssl_sock.recv(HEADER).decode(FORMAT)
+                print(f"{respuesta}")
+
+                if respuesta.split("\n")[1] == "VERIFICACIÓN SUPERADA.":
+                    sendMessageKafka("Status", f"TAXI {TAXI_ID} ACTIVO.")
+                    return ssl_sock
+
     except ConnectionError:
         print(f"Error de conexión con la central en {centralIP}:{centralPort}")
 
     except Exception as e:
         print(f"Error generado: {str(e)}")
-        
+
     return None
 
 #region CUSTOMER SERVICES

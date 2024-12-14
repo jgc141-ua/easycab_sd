@@ -614,30 +614,42 @@ def authTaxi(conn):
     finally:
         conn.close()
 
+# Abre un socket para aceptar peticiones de autenticación
+def connectionSocket(server):
+    server.listen()
+    print(f"CENTRAL A LA ESCUCHA EN {server}")
+    while True:
+        conn, addr = server.accept()
+        
+        threadAuthTaxi = threading.Thread(target=authTaxi, args=(conn,))
+        threadAuthTaxi.start()
+
 # Abre un socket para aceptar peticiones de autenticación con SSL/TLS
-def connectionSocket():
+def connectionSocketSSL(server):
     # Crear contexto SSL para el servidor
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certfile="central.crt", keyfile="central.key")
     context.load_verify_locations("ca.pem")
 
-    # Crear el socket del servidor
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(("127.0.0.1", 5050))
-    server_socket.listen(5)
-    print(f"CENTRAL A LA ESCUCHA EN 127.0.0.1:5050 (SSL/TLS habilitado)")
+    # Configurar el socket ya creado para que use SSL
+    server.listen(5)
+    print(f"CENTRAL A LA ESCUCHA EN {server.getsockname()} (SSL/TLS habilitado)")
 
     while True:
         # Aceptar conexiones entrantes
-        client_socket, addr = server_socket.accept()
+        client_socket, addr = server.accept()
 
         # Envolver el socket con SSL
-        ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
-        print(f"CONEXIÓN SSL ESTABLECIDA CON {addr}")
+        try:
+            ssl_client_socket = context.wrap_socket(client_socket, server_side=True)
+            print(f"CONEXIÓN SSL ESTABLECIDA CON {addr}")
 
-        # Crear un hilo para manejar la autenticación del taxi
-        threadAuthTaxi = threading.Thread(target=authTaxi, args=(ssl_client_socket,))
-        threadAuthTaxi.start()
+            # Crear un hilo para manejar la autenticación del taxi
+            threadAuthTaxi = threading.Thread(target=authTaxi, args=(ssl_client_socket,))
+            threadAuthTaxi.start()
+        except ssl.SSLError as e:
+            print(f"Error SSL: {e}")
+            client_socket.close()
 
 #region ACTIVITY CONTROL
 # GESTIONA EL MANTENIMIENTO DE LOS CLIENTES O LOS TAXIS

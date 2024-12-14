@@ -161,6 +161,8 @@ def moveStepTaxi(camino, destino, beforeStep, pendingWay, customer):
 #region TAXI REGISTER
 # Registrar el taxi en la base de datos
 REGISTRY_URL = "https://127.0.0.1:5000"
+# VERIFY_SSL = "certAndKey.pem"  # Ruta al certificado del servidor
+
 VERIFY_SSL = False
 
 def registerTaxi():
@@ -179,6 +181,29 @@ def registerTaxi():
         print(f"ERROR EN LA CONEXIÓN: {e}")
 
     return False
+
+"""
+[ERROR] --> Está dando error SSL, porque el certificado no coincide con el servidor (Para que sepas el error que sale)
+def registerTaxi():
+    try:
+        data = {"id": int(TAXI_ID)}
+        answer = requests.post(f"{REGISTRY_URL}/register", json=data, verify=VERIFY_SSL)
+        print(answer)
+
+        if answer.status_code == 200:
+            print("TAXI REGISTRADO!!")
+            return True
+        else:
+            print(f"ERROR AL REGISTRAR!! {answer.status_code} - {answer.json().get('message', '')}")
+        
+    except requests.exceptions.SSLError as ssl_error:
+        print(f"ERROR SSL: {ssl_error}")
+
+    except Exception as e:
+        print(f"ERROR EN LA CONEXIÓN: {e}")
+
+    return False
+"""
 
 # Función encargada de manejar la conexión con la central y esperar órdenes, usando sockets
 def centralConn(centralIP, centralPort):
@@ -444,7 +469,7 @@ def main(centralIP, centralPort, sensorIP, sensorPort):
     sensorConnVerified = sensorConn(sensorIP, sensorPort)
 
     if sensorConnVerified:
-        verifiedConn = centralConn(centralIP, centralPort)
+        verifiedConn = centralConnSSL(centralIP, centralPort)
 
         if verifiedConn:
             threadSensorState = threading.Thread(target=sensorState, args=(sensorIP, sensorPort))

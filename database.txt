@@ -1,2 +1,3 @@
 2,-,NO.Parado
 3,-,OK.Parado
+4,-,OK.Parado

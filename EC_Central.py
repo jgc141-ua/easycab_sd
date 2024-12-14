@@ -803,7 +803,7 @@ def main(port):
     # manageTaxi(CLEAN)
     loadLocations()
 
-    threadSockets = threading.Thread(target=connectionSocket, args=(server,))
+    threadSockets = threading.Thread(target=connectionSocketSSL, args=(server,))
     threadResquests = threading.Thread(target=requestCustomers)
     threadAreActives = threading.Thread(target=areActives)
     threadCentralActive = threading.Thread(target=centralActive)

@@ -43,9 +43,10 @@ def obtainServices():
 
     return -1, -1
 
+acceptedService = False
 # Ejecuta todos los servicios del cliente
 def executeServices():
-    global disconnect
+    global disconnect, acceptedService
     ubication, services = obtainServices()
 
     if ubication != -1 and services != -1:
@@ -55,6 +56,7 @@ def executeServices():
                 break
 
             print(f"\nENVIANDO SIGUIENTE SERVICIO ({service})...")
+            acceptedService = False
             completedService = requestService(ubication, service)
             if completedService:
                 ubication = service
@@ -65,7 +67,7 @@ def executeServices():
 
 # Solicitudes de servicio y mantenimiento de la conexión con central (CUSTOMER STATUS)
 def requestService(ubicacion, destino):
-    global disconnect
+    global disconnect, acceptedService
     sendMessageKafka("Customer2Central", f"SOLICITUD DE SERVICIO: {CUSTOMER_ID} {ubicacion} {destino}") # Un taxi primero tiene que ir a la ubicación y luego llevarlo al destino
 
     consumer = kafka.KafkaConsumer("Central2Customer", group_id=str(uuid.uuid4()), auto_offset_reset="latest", bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
@@ -73,7 +75,7 @@ def requestService(ubicacion, destino):
     completedService = False
     declinedService = False
     while not disconnect and not declinedService and not completedService:
-        messages = consumer.poll(1000)
+        messages = consumer.poll(100)
         for _, messagesValues in messages.items():
             for msg in messagesValues:
                 msg = msg.value.decode(FORMAT)
@@ -85,6 +87,7 @@ def requestService(ubicacion, destino):
                     if id2Verify == CUSTOMER_ID:
                         if state == "ACEPTADO.":
                             print("SERVICIO ACEPTADO Y EN CAMINO...")
+                            acceptedService = True
 
                         elif state == "COMPLETADO.":
                             print("SERVICIO COMPLETADO.")
@@ -126,7 +129,7 @@ def customerStatus():
 
 # Recibe el STATUS de la CENTRAL
 def centralStatus():
-    global disconnect
+    global disconnect, acceptedService
     consumer = kafka.KafkaConsumer("Central2Customer", group_id=str(uuid.uuid4()), bootstrap_servers=f"{KAFKA_IP}:{KAFKA_PORT}")
 
     startTime = time.time()
@@ -143,6 +146,14 @@ def centralStatus():
 
                 if msg == "CENTRAL ACTIVE":
                     startTime = time.time()
+
+                elif msg.startswith("CLIENTE") or msg.startswith(f"FIN {CUSTOMER_ID}"):
+                    #print("ENVIA MENSAJE STATUS")
+                    if acceptedService == False:
+                        sendMessageKafka("Central2Customer", msg)
+                        time.sleep(1.5)
+                    
+
         
     consumer.close()
 

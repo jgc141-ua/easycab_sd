@@ -9,6 +9,8 @@ import requests
 import heapq
 import math
 import ssl # PARA CIFRADO
+import urllib3
+urllib3.disable_warnings()
 
 #region CONSTANTS
 HEADER = 64
@@ -160,14 +162,13 @@ def moveStepTaxi(camino, destino, beforeStep, pendingWay, customer):
 
 #region TAXI REGISTER
 # Registrar el taxi en la base de datos
-REGISTRY_URL = "https://127.0.0.1:5000"
+REGISTRY_URL = "https://192.168.24.1:5000"
 VERIFY_SSL = False
 
 def registerTaxi():
     try:
         data = {"id": int(TAXI_ID)}
         answer = requests.post(f"{REGISTRY_URL}/register", json=data, verify=VERIFY_SSL)
-        print(answer)
 
         if answer.status_code == 200:
             print("TAXI REGISTRADO!!")

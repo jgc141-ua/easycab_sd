@@ -40,7 +40,7 @@ def unregisterTaxi(taxiID):
     exists = False
     with open("database.txt", "w") as file:
         for line in lines:
-            id = int(line.split(",")[0])
+            id = int(line.split(",")[1])
             if id != taxiID:
                 file.write(line)
             else:
@@ -52,13 +52,19 @@ def unregisterTaxi(taxiID):
 
 # Registrar un taxi en la base de datos
 def registerTaxi(taxiID):
-    with open("database.txt", "r+") as file:
-        found = file.read().find(f"{taxiID}")
-        if found == -1:
-            file.seek(0, 2)  # Escribe al final del archivo
-            file.write(f"{taxiID},-,NO.Parado\n")
-            file.close()
-            return True
+    with open("database.txt", "r") as file:
+        for line in file:
+            object = line.split(",")[0]
+            if object == "TAXI" or object[0] == "T":
+                id = int(line.split(",")[1])
+                if id == taxiID:
+                    file.close()
+                    return False
+
+    with open("database.txt", "a") as file:
+        file.write(f"TAXI,{taxiID},-,NO.Parado\n")
+        file.close()
+        return True
 
     return False
 
@@ -95,7 +101,7 @@ def registerTaxis():
             return messages(EXISTS_ERROR)
             
     except Exception as e:
-        return messages(SERVER_ERROR)
+        return e#messages(SERVER_ERROR)
 
 #region MAIN
 if __name__ == "__main__":
@@ -104,6 +110,8 @@ if __name__ == "__main__":
         sslContext.load_cert_chain("certAndKey.pem")
 
         app.run(
+            host="192.168.24.1",
+            port=5000,
             ssl_context=sslContext
         )
     except Exception as e:

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EasyCab Central</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="icon.ico">
+</head>
+<body>
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+    <div class="vertical-container">
+        <div class="horizontal-container">
+            <div class="column">
+                <div class="box-container">
+                    <span class="box-tag">TAXIS OCUPADOS</span>
+                    <div class="box" id="busiesTaxis"></div>
+                </div>
+                <div class="box-container">
+                    <span class="box-tag">TAXIS</span>
+                    <div class="box" id="notBusiesTaxis"></div>
+                </div>
+                <div class="box-container">
+                    <span class="box-tag">CLIENTES EN SERVICIO</span>
+                    <div class="box" id="servicedCustomers"></div>
+                </div>
+                <div class="box-container">
+                    <span class="box-tag">CLIENTES</span>
+                    <div class="box" id="notServicedCustomers"></div>
+                </div>
+            </div>
+            
+            <div class="box-container">
+                <span class="box-tag">MAPA DE EASYCAB</span>
+                <div class="box map" id="map"></div>
+            </div>
+            
+            <div class="column">
+                <div class="box-container">
+                    <span class="box-tag">LOGS</span>
+                    <div class="box" id="logs"><p id="no-logs">No hay logs por leer</p></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="weather-input">
+            <p id="currentLocation">Ubicación actual: Alicante</p>
+            <input type="text" id="locationInput" placeholder="Ingrese una nueva ubicacion">
+            <button onclick="updateWeather()">Actualizar Ubicación</button>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
+    <script src="map.js"></script>
+
+</body>
+</html>
